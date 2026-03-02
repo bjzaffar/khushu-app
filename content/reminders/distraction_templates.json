@@ -1,0 +1,60 @@
+{
+  "cold_start": [
+    "Take one breath. Who are you about to stand before?",
+    "Leave what is in your hands. Stand fully present.",
+    "This moment is between you and Allah.",
+    "Set everything down. This is your time.",
+    "The world can wait. This cannot.",
+    "You are about to stand before the Most High. Arrive fully."
+  ],
+  "distractions": {
+    "work": {
+      "attribute": "Al-Wakeel",
+      "attributeTranslation": "The Trustee, The Disposer of Affairs",
+      "emerging": "You've sometimes noticed thoughts of work drifting into this Salah.",
+      "established": "Your work concerns often arise at this time. Stand before Al-Wakeel — entrust your affairs to the One who manages all things."
+    },
+    "financial": {
+      "attribute": "Ar-Razzaq",
+      "attributeTranslation": "The Provider, The Sustainer",
+      "emerging": "You've occasionally noticed thoughts of provision during this Salah.",
+      "established": "Financial pressure often visits this Salah. Stand before Ar-Razzaq — the One who controls all provision."
+    },
+    "family": {
+      "attribute": "Al-Wadud",
+      "attributeTranslation": "The Loving, The Most Affectionate",
+      "emerging": "Thoughts of family or relationships have sometimes come during this Salah.",
+      "established": "Family and relationship concerns often come to this prayer. Stand before Al-Wadud — the source of all love and care."
+    },
+    "anxiety": {
+      "attribute": "Al-Hafeez",
+      "attributeTranslation": "The Protector, The Preserver",
+      "emerging": "You've sometimes noticed anxiety about the future in this Salah.",
+      "established": "Worry about the future often accompanies this prayer. Stand before Al-Hafeez — the One who preserves and protects all things."
+    },
+    "fatigue": {
+      "attribute": "Al-Qadir",
+      "attributeTranslation": "The All-Powerful, The Capable",
+      "emerging": "You've noted tiredness during this Salah at times.",
+      "established": "Fatigue is often present at this time. Stand before Al-Qadir — draw from the strength of the One who has power over all things."
+    },
+    "physical": {
+      "attribute": "Ash-Shaafi",
+      "attributeTranslation": "The Healer",
+      "emerging": "Physical discomfort has occasionally distracted you in this Salah.",
+      "established": "Physical discomfort often arises during this prayer. Turn to Ash-Shaafi — the One who heals and restores."
+    },
+    "random": {
+      "attribute": "Al-Aleem",
+      "attributeTranslation": "The All-Knowing",
+      "emerging": "Your mind has sometimes wandered to random thoughts in this Salah.",
+      "established": "Random thoughts often visit this prayer. Remember Al-Aleem — He who knows every secret and sees every turn of the heart."
+    },
+    "other": {
+      "attribute": "Al-Mujeeb",
+      "attributeTranslation": "The Responsive, The Answerer",
+      "emerging": "You've sometimes noticed your attention drifting during this Salah.",
+      "established": "Your attention sometimes drifts at this time. Stand before Al-Mujeeb — He who responds to every call and hears every whisper."
+    }
+  }
+}
