@@ -1,6 +1,5 @@
 import * as SQLite from 'expo-sqlite';
 import { drizzle } from 'drizzle-orm/expo-sqlite';
-import { sql } from 'drizzle-orm';
 import * as schema from './schema';
 
 // Singleton SQLite connection

@@ -1,10 +1,68 @@
-import { View, Text, SafeAreaView, ScrollView } from 'react-native';
+import { View, Text, SafeAreaView, ScrollView, Pressable } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
+import { useState, useCallback } from 'react';
 import { useAppStore } from '@/store/appStore';
-import { SALAH_DISPLAY_NAMES, SALAH_NAMES } from '@/types';
-import { formatPrayerTime } from '@/lib/prayer/prayerTimes';
+import {
+  SALAH_DISPLAY_NAMES,
+  SALAH_NAMES,
+  type SalahName,
+  type PrayerTimes,
+} from '@/types';
+import { formatPrayerTime, getCurrentSalahWindow } from '@/lib/prayer/prayerTimes';
+import { db } from '@/db/database';
+import { salahLogs } from '@/db/schema';
+import { eq } from 'drizzle-orm';
+
+type SalahStatus = 'logged' | 'current' | 'upcoming' | 'past';
+
+function getSalahStatus(
+  name: SalahName,
+  prayerTimes: PrayerTimes,
+  loggedSet: Set<string>,
+  now: Date
+): SalahStatus {
+  if (loggedSet.has(name)) return 'logged';
+  const currentWindow = getCurrentSalahWindow(prayerTimes, now);
+  if (currentWindow === name) return 'current';
+  if (prayerTimes[name] > now) return 'upcoming';
+  return 'past';
+}
 
 export default function HomeScreen() {
-  const { todaysPrayerTimes } = useAppStore();
+  const { todaysPrayerTimes, startSalahMode } = useAppStore();
+  // salahName → focusRating for logs today
+  const [todaysLogs, setTodaysLogs] = useState<Record<string, number>>({});
+
+  // Reload today's logs whenever this tab is focused
+  useFocusEffect(
+    useCallback(() => {
+      async function loadLogs() {
+        const today = new Date().toISOString().split('T')[0];
+        const logs = await db
+          .select()
+          .from(salahLogs)
+          .where(eq(salahLogs.logDate, today));
+        const map: Record<string, number> = {};
+        for (const log of logs) {
+          map[log.salahName] = log.focusRating;
+        }
+        setTodaysLogs(map);
+      }
+      loadLogs();
+    }, [])
+  );
+
+  const now = new Date();
+  const loggedSet = new Set(Object.keys(todaysLogs));
+
+  function handleSalahPress(name: SalahName, status: SalahStatus) {
+    if (status === 'current') {
+      startSalahMode(name);
+      router.push('/salah-mode');
+    } else if (status === 'past') {
+      router.push({ pathname: '/(tabs)/log', params: { salah: name } });
+    }
+  }
 
   return (
     <SafeAreaView className="flex-1 bg-sand-100">
@@ -13,20 +71,30 @@ export default function HomeScreen() {
         <View className="mb-6">
           <Text className="text-2xl font-semibold text-ink-900">Today</Text>
           <Text className="text-ink-300 text-sm mt-1">
-            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+            {now.toLocaleDateString('en-US', {
+              weekday: 'long',
+              month: 'long',
+              day: 'numeric',
+            })}
           </Text>
         </View>
 
-        {/* Prayer time timeline */}
         {todaysPrayerTimes ? (
           <View className="gap-y-3">
-            {SALAH_NAMES.map((name) => (
-              <SalahCard
-                key={name}
-                name={SALAH_DISPLAY_NAMES[name]}
-                time={formatPrayerTime(todaysPrayerTimes[name])}
-              />
-            ))}
+            {SALAH_NAMES.map((name) => {
+              const status = getSalahStatus(name, todaysPrayerTimes, loggedSet, now);
+              const rating = todaysLogs[name];
+              return (
+                <SalahCard
+                  key={name}
+                  name={name}
+                  time={formatPrayerTime(todaysPrayerTimes[name])}
+                  status={status}
+                  rating={rating}
+                  onPress={() => handleSalahPress(name, status)}
+                />
+              );
+            })}
           </View>
         ) : (
           <View className="bg-sand-200 rounded-2xl p-5 items-center">
@@ -40,11 +108,74 @@ export default function HomeScreen() {
   );
 }
 
-function SalahCard({ name, time }: { name: string; time: string }) {
+function SalahCard({
+  name,
+  time,
+  status,
+  rating,
+  onPress,
+}: {
+  name: SalahName;
+  time: string;
+  status: SalahStatus;
+  rating?: number;
+  onPress: () => void;
+}) {
+  const isInteractive = status === 'current' || status === 'past';
+
+  const borderColor = {
+    logged: 'border-sage-500',
+    current: 'border-sage-600',
+    upcoming: 'border-sand-200',
+    past: 'border-sand-200',
+  }[status];
+
+  const bgColor = {
+    logged: 'bg-white',
+    current: 'bg-white',
+    upcoming: 'bg-white',
+    past: 'bg-white',
+  }[status];
+
   return (
-    <View className="bg-white rounded-2xl px-5 py-4 flex-row justify-between items-center shadow-sm border border-sand-200">
-      <Text className="text-ink-700 font-medium text-base">{name}</Text>
-      <Text className="text-ink-300 text-sm">{time}</Text>
-    </View>
+    <Pressable
+      onPress={onPress}
+      disabled={!isInteractive}
+      className={`rounded-2xl px-5 py-4 flex-row justify-between items-center border ${bgColor} ${borderColor} ${
+        status === 'past' ? 'opacity-60' : ''
+      }`}
+    >
+      {/* Left: name + sub-label */}
+      <View className="flex-1">
+        <Text className="font-medium text-base text-ink-700">
+          {SALAH_DISPLAY_NAMES[name]}
+        </Text>
+        {status === 'current' && (
+          <Text className="text-sage-600 text-xs font-medium mt-0.5">
+            Now · Tap to begin Salah Mode
+          </Text>
+        )}
+        {status === 'past' && (
+          <Text className="text-ink-300 text-xs mt-0.5">Tap to log</Text>
+        )}
+      </View>
+
+      {/* Right: time + stars */}
+      <View className="items-end gap-y-1">
+        <Text className="text-ink-300 text-sm">{time}</Text>
+        {status === 'logged' && rating !== undefined && (
+          <View className="flex-row gap-x-0.5">
+            {[1, 2, 3, 4, 5].map((n) => (
+              <Text
+                key={n}
+                className={`text-xs ${n <= rating ? 'text-sage-600' : 'text-sand-300'}`}
+              >
+                ★
+              </Text>
+            ))}
+          </View>
+        )}
+      </View>
+    </Pressable>
   );
 }
