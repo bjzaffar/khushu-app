@@ -1,60 +1,153 @@
 {
   "cold_start": [
-    "Take one breath. Who are you about to stand before?",
-    "Leave what is in your hands. Stand fully present.",
-    "This moment is between you and Allah.",
-    "Set everything down. This is your time.",
-    "The world can wait. This cannot.",
-    "You are about to stand before the Most High. Arrive fully."
+    { "text": "Take one breath. Who are you about to stand before?", "type": "short" },
+    { "text": "Leave what is in your hands. Stand fully present.", "type": "short" },
+    { "text": "This moment is between you and Allah.", "type": "short" },
+    { "text": "Set everything down. This is your time.", "type": "short" },
+    { "text": "The world can wait. This cannot.", "type": "short" },
+    { "text": "You are about to stand before the Most High. Arrive fully.", "type": "short" }
   ],
   "distractions": {
     "work": {
-      "attribute": "Al-Wakeel",
-      "attributeTranslation": "The Trustee, The Disposer of Affairs",
-      "emerging": "You've sometimes noticed thoughts of work drifting into this Salah.",
-      "established": "Your work concerns often arise at this time. Stand before Al-Wakeel — entrust your affairs to the One who manages all things."
+      "attributes": [
+        { "name": "Al-Wakeel", "translation": "The Trustee, The Disposer of Affairs" },
+        { "name": "Al-Muqeet", "translation": "The Sustainer, The Guardian" }
+      ],
+      "established": [
+        { "text": "You are standing before Al-Wakeel — the One who manages every affair better than you ever could. Hand it over.", "type": "attribute" },
+        { "text": "Your work concerns are real, but you are now in the presence of Al-Muqeet, the One who sustains all things. He has it.", "type": "attribute" },
+        { "text": "Say 'Nothing will ever befall us except what Allah has destined for us. He is our Protector.' So in Allah let the believers put their trust. - Surah At-Tawbah 9:51", "type": "ayah"},
+        { "text": "'Tie your camel, then put your trust in Allah.' - Jami' At-Tirmidhi 2517. You're doing the work already, now is the time to focus on trusting Allah.", "type": "hadith"},
+        { "text": "Whatever concerns you at work: Al-Wakeel already holds it.", "type": "short" },
+        { "text": "You've sometimes noticed thoughts of work drifting into this Salah.", "type": "short" },
+        { "text": "Work has occasionally pulled at your attention during this prayer.", "type": "short" }
+      ],
+      "llm_guidance": {
+        "theme": "entrusting affairs and releasing the need to control outcomes",
+        "avoid": "productivity advice, toxic positivity, minimising the stress",
+        "tone": "grounding, surrendering, confident trust in Allah's management"
+      }
     },
     "financial": {
-      "attribute": "Ar-Razzaq",
-      "attributeTranslation": "The Provider, The Sustainer",
-      "emerging": "You've occasionally noticed thoughts of provision during this Salah.",
-      "established": "Financial pressure often visits this Salah. Stand before Ar-Razzaq — the One who controls all provision."
-    },
-    "family": {
-      "attribute": "Al-Wadud",
-      "attributeTranslation": "The Loving, The Most Affectionate",
-      "emerging": "Thoughts of family or relationships have sometimes come during this Salah.",
-      "established": "Family and relationship concerns often come to this prayer. Stand before Al-Wadud — the source of all love and care."
+      "attributes": [
+        { "name": "Ar-Razzaq", "translation": "The Provider, The Sustainer of all provision" },
+        { "name": "Al-Mughni", "translation": "The Enricher, The One who satisfies all needs" }
+      ],
+      "established": [
+        { "text": "You are standing before Ar-Razzaq — the One who has already written your provision. Your rizq is guaranteed; your presence here is what matters.", "type": "attribute" },
+        { "text": "You are standing before Al-Mughni, the One who enriches and satisfies. Every need you carry is known to Him.", "type": "attribute" },
+        { "text": "Your provision is already written. Come before the One who wrote it.", "type": "short" },
+        { "text": "And He will provide for them from sources they could never imagine. And whoever relies upon Allah — then He alone is sufficient for him. Indeed Allah achieves His Will. - At-Talaq 65:3", "type": "ayah" },
+        { "text": "If you were to rely upon Allah with the reliance He is due, then He would provide for you just as a bird is provided for — it goes out in the morning empty and returns full. - Jami' At-Tirmidhi 2344", "type": "hadith"},
+        { "text": "Thoughts of provision have sometimes come during this Salah.", "type": "short" },
+        { "text": "You've occasionally noticed financial worries entering this prayer.", "type": "short" }
+      ],
+      "llm_guidance": {
+        "theme": "Allah as the direct and only source of provision — rizq is already written",
+        "avoid": "financial advice, vague reassurance, telling them not to worry",
+        "tone": "anchoring, certainty in tawakkul, direct connection between the distraction and the attribute"
+      }
     },
     "anxiety": {
-      "attribute": "Al-Hafeez",
-      "attributeTranslation": "The Protector, The Preserver",
-      "emerging": "You've sometimes noticed anxiety about the future in this Salah.",
-      "established": "Worry about the future often accompanies this prayer. Stand before Al-Hafeez — the One who preserves and protects all things."
+      "attributes": [
+        { "name": "Al-Hafeez", "translation": "The Protector, The Preserver of all things" },
+        { "name": "Al-Amaan", "translation": "The Giver of Security and Refuge" }
+      ],
+      "established": [
+        { "text": "You are standing before Al-Hafeez — the One who is already guarding everything you are afraid of losing.", "type": "attribute" },
+        { "text": "You are standing before the Giver of Security. The future you fear is already in His hands. You are safe here.", "type": "attribute" },
+        { "text": "The future you fear is in Allah's hands. You are safe here.", "type": "short" },
+        { "text": "Verily, in the remembrance of Allah do hearts find rest. - Surah Ar-Ra'd 13:28 — This salah is part of that remembrance.", "type": "ayah" },
+        { "text": "Do not grive, indeed Allah is with us. - Surah At-Tawbah 9:40", "type": "ayah"},
+        { "text": "Allah does not burden a soul more than it can bear. - Surah Al-Baqarah 2:286", "type": "ayah"},
+        { "text": "So verily with hardship comes ease. Verily with hardship comes ease. - Surah Ash-Sharh 94:5-6", "type": "ayah"},
+        { "text": "You've sometimes noticed anxiety about the future creeping into this Salah.", "type": "short" },
+        { "text": "Worry about what is coming has occasionally distracted you here.", "type": "short" }
+      ],
+      "llm_guidance": {
+        "theme": "Allah as the direct answer to fear of the unknown — He already holds what we are afraid of",
+        "avoid": "telling them anxiety is irrational, minimising their fears, generic reassurance",
+        "tone": "calming, direct, making Allah the shelter not just a concept"
+      }
     },
-    "fatigue": {
-      "attribute": "Al-Qadir",
-      "attributeTranslation": "The All-Powerful, The Capable",
-      "emerging": "You've noted tiredness during this Salah at times.",
-      "established": "Fatigue is often present at this time. Stand before Al-Qadir — draw from the strength of the One who has power over all things."
+    "tired": {
+      "attributes": [
+        { "name": "Al-Qawiyy", "translation": "The Strong, The All-Powerful" },
+        { "name": "As-Samad", "translation": "The Eternal Refuge, The One to whom all turn in need" }
+      ],
+      "established": [
+        { "text": "You are standing before Al-Qawiyy — the Strong. Your body is tired but you showed up. That is enough. He sees it.", "type": "attribute" },
+        { "text": "You are standing before As-Samad, the One everyone and everything turns to in need. You turned to Him. That is the whole point.", "type": "attribute" },
+        { "text": "You showed up tired. That effort is not lost on Allah.", "type": "short" },
+        { "text": "You've noted tiredness during this Salah at times.", "type": "short" },
+        { "text": "Tiredness has occasionally made this prayer feel heavy.", "type": "short" }
+      ],
+      "llm_guidance": {
+        "theme": "the act of showing up tired is itself an act of worship — Allah's strength carries what ours cannot",
+        "avoid": "pushing through, willpower framing, implying they should feel more energetic",
+        "tone": "affirming the effort, gentle, strength through surrender not exertion"
+      }
     },
-    "physical": {
-      "attribute": "Ash-Shaafi",
-      "attributeTranslation": "The Healer",
-      "emerging": "Physical discomfort has occasionally distracted you in this Salah.",
-      "established": "Physical discomfort often arises during this prayer. Turn to Ash-Shaafi — the One who heals and restores."
+    "guilt": {
+      "attributes": [
+        { "name": "Ar-Rahman", "translation": "The Entirely Merciful, The Most Compassionate" },
+        { "name": "Al-Raheem", "translation": "The Most Merciful, The Especially Merciful" },
+        { "name": "Al-Ghafur", "translation": "The Most Forgiving, The One whose forgiveness is unlimited, The One who forgives all sins" },
+        { "name": "Al-Ghaffar", "translation": "The All Forgiving, The One who forgives often" }
+      ],
+      "established": [
+        { "text": "You are standing before Ar-Rahman — the Entirely Merciful. Allah sees your struggle.", "type": "attribute" },
+        { "text": "You are standing before Al-Raheem — the Especially Merciful, whose mercy is reserved for the believers. Your guilt brought you here. That is exactly where His mercy meets you.", "type": "attribute" },
+        { "text": "You are standing before Al-Ghafur — the One whose forgiveness has no limit and no condition of worthiness. No regret is too heavy to bring here.", "type": "attribute" },
+        { "text": "You are standing before Al-Ghaffar — the One who forgives again and again, without weariness. He does not tire of forgiving you. Do not tire of returning to him.", "type": "attribute" },
+        { "text": "Allah says: 'I am just as My slave thinks I am... if he comes to Me walking, I go to him running.' - Sahih al-Bukhari 7405", "type": "hadith" },
+        { "text": "'O My servants who have transgressed against themselves! Do not lose hope in the mercy of Allah, indeed Allah forgives all sins. He is indeed the All-Forgiving, the Most Merciful.'", "type": "ayah"},
+        { "text": "Except those who repent, believe and do good deeds. Then for them Allah will replace their sins with good deeds. And Allah is All-Forgiving, Most Merciful. - Surah Al-Furqan 25:70", "type": "ayah"},
+        { "text": "Guilt of your past sins has occasionally distracted you in this Salah.", "type": "short" },
+        { "text": "Your conscience of your past sins has sometimes made it difficult to focus in this Salah.", "type": "short" }
+      ],
+      "llm_guidance": {
+        "theme": "Allah's mercy and forgiveness are limitless and unconditional — guilt itself is a sign of faith, and this prayer is where your repentance starts",
+        "avoid": "minimising the weight of sin, false reassurance, shaming, implying the sin may be unforgivable",
+        "tone": "deeply merciful, welcoming, making the act of turning back to Allah feel like the most natural and expected response"
+      }
+    },
+    "rushing": {
+      "attributes": [
+        { "name": "Al-Haleem", "translation": "The Forbearing, The Patient, The Clement" },
+        { "name": "As-Sabur", "translation": "The Patient, The One who does not hasten" }
+      ],
+      "established": [
+        { "text": "You are standing before Al-Haleem — the Forbearing, the One who is never in a hurry. Slow down to meet Him.", "type": "attribute" },
+        { "text": "You are standing before As-Sabur. He does not rush. This prayer does not need to be raced through — it needs to be given.", "type": "attribute" },
+        { "text": "Allah is not in a hurry. Neither should you be.", "type": "short" },
+        { "text": "The Prophet ﷺ said: \"When you hear the iqamah, walk to the prayer with tranquility and dignity. Do not rush.\" (Bukhari 636)", "type": "hadith" },
+        { "text": "You've sometimes felt rushed during this Salah.", "type": "short" },
+        { "text": "The pace of your day has occasionally followed you into this prayer.", "type": "short" }
+      ],
+      "llm_guidance": {
+        "theme": "Allah's nature is unhurried — rushing is the opposite of the presence this moment calls for",
+        "avoid": "productivity framing, telling them to be more organised, stressing them further",
+        "tone": "slowing, permission-giving, making stillness feel like the right response"
+      }
     },
     "random": {
-      "attribute": "Al-Aleem",
-      "attributeTranslation": "The All-Knowing",
-      "emerging": "Your mind has sometimes wandered to random thoughts in this Salah.",
-      "established": "Random thoughts often visit this prayer. Remember Al-Aleem — He who knows every secret and sees every turn of the heart."
-    },
-    "other": {
-      "attribute": "Al-Mujeeb",
-      "attributeTranslation": "The Responsive, The Answerer",
-      "emerging": "You've sometimes noticed your attention drifting during this Salah.",
-      "established": "Your attention sometimes drifts at this time. Stand before Al-Mujeeb — He who responds to every call and hears every whisper."
+      "attributes": [
+        { "name": "Al-Aleem", "translation": "The All-Knowing, aware of every thought" },
+        { "name": "Al-Baseer", "translation": "The All-Seeing, The One who sees all things" }
+      ],
+      "established": [
+        { "text": "You are standing before Al-Aleem — He who knows every secret and sees every turn of the heart. Even a wandering mind in front of Him is still in front of Him.", "type": "attribute" },
+        { "text": "You are standing before Al-Baseer. He sees your effort to return your attention. Every return counts.", "type": "attribute" },
+        { "text": "Every time you return your attention, it counts. Keep returning.", "type": "short" },
+        { "text": "Your mind has sometimes wandered to random thoughts in this Salah.", "type": "short" },
+        { "text": "Scattered thoughts have occasionally pulled you away here.", "type": "short" }
+      ],
+      "llm_guidance": {
+        "theme": "even a distracted mind that keeps returning is still in worship — Allah sees the effort not just the result",
+        "avoid": "shaming the mind for wandering, implying failure, perfectionism",
+        "tone": "forgiving, reframing distraction as an opportunity to return, normalising the struggle"
+      }
     }
   }
 }

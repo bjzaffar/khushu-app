@@ -28,6 +28,10 @@ export async function initDatabase(): Promise<void> {
       value TEXT NOT NULL
     );
   `);
+
+  // Incremental migrations — safe to re-run (ADD COLUMN IF NOT EXISTS)
+  try { sqlite.execSync(`ALTER TABLE salah_logs ADD COLUMN reminder_type TEXT`); } catch {}
+  try { sqlite.execSync(`ALTER TABLE salah_logs ADD COLUMN classified_category TEXT`); } catch {}
 }
 
 export { schema };

@@ -1,0 +1,2 @@
+1. Github commit
+2. Supabase backup

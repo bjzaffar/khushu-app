@@ -1,4 +1,5 @@
-import { View, Text, SafeAreaView, ScrollView, Pressable } from 'react-native';
+import { View, Text, ScrollView, Pressable } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { useState, useCallback } from 'react';
 import { useAppStore } from '@/store/appStore';
@@ -56,17 +57,15 @@ export default function HomeScreen() {
   const loggedSet = new Set(Object.keys(todaysLogs));
 
   function handleSalahPress(name: SalahName, status: SalahStatus) {
-    if (status === 'current') {
+    if (status !== 'logged') {
       startSalahMode(name);
       router.push('/salah-mode');
-    } else if (status === 'past') {
-      router.push({ pathname: '/(tabs)/log', params: { salah: name } });
     }
   }
 
   return (
     <SafeAreaView className="flex-1 bg-sand-100">
-      <ScrollView className="flex-1 px-5 pt-6">
+      <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 }}>
         {/* Header */}
         <View className="mb-6">
           <Text className="text-2xl font-semibold text-ink-900">Today</Text>
@@ -121,7 +120,7 @@ function SalahCard({
   rating?: number;
   onPress: () => void;
 }) {
-  const isInteractive = status === 'current' || status === 'past';
+  const isInteractive = status !== 'logged';
 
   const borderColor = {
     logged: 'border-sage-500',
@@ -152,11 +151,11 @@ function SalahCard({
         </Text>
         {status === 'current' && (
           <Text className="text-sage-600 text-xs font-medium mt-0.5">
-            Now · Tap to begin Salah Mode
+            Now · Tap to enter Salah Mode
           </Text>
         )}
-        {status === 'past' && (
-          <Text className="text-ink-300 text-xs mt-0.5">Tap to log</Text>
+        {(status === 'upcoming' || status === 'past') && (
+          <Text className="text-ink-300 text-xs mt-0.5">Tap to enter Salah Mode</Text>
         )}
       </View>
 

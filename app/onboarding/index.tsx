@@ -1,4 +1,5 @@
-import { View, Text, Pressable, SafeAreaView } from 'react-native';
+import { View, Text, Pressable } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
 export default function OnboardingWelcome() {

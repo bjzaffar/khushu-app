@@ -1,13 +1,16 @@
 import { useState } from 'react';
-import { View, Text, Pressable, SafeAreaView, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, ActivityIndicator } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as Location from 'expo-location';
 import { useAppStore } from '@/store/appStore';
 import { calculatePrayerTimes } from '@/lib/prayer/prayerTimes';
+import { db } from '@/db/database';
+import { settings } from '@/db/schema';
 
 export default function OnboardingLocation() {
   const { setLocation, setTodaysPrayerTimes } = useAppStore();
-  const [status, setStatus] = useState<'idle' | 'loading' | 'denied'>('idle');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'denied' | 'error'>('idle');
 
   async function requestLocation() {
     setStatus('loading');
@@ -18,18 +21,32 @@ export default function OnboardingLocation() {
       return;
     }
 
-    const loc = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.Balanced,
-    });
+    try {
+      // Try current position first; fall back to last known if GPS is slow
+      let loc = await Location.getLastKnownPositionAsync();
+      if (!loc) {
+        loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+      }
 
-    const coords = {
-      latitude: loc.coords.latitude,
-      longitude: loc.coords.longitude,
-    };
+      const coords = {
+        latitude: loc.coords.latitude,
+        longitude: loc.coords.longitude,
+      };
 
-    setLocation(coords);
-    setTodaysPrayerTimes(calculatePrayerTimes(coords));
-    router.push('/onboarding/account');
+      setLocation(coords);
+      setTodaysPrayerTimes(calculatePrayerTimes(coords));
+
+      db.insert(settings).values({ key: 'location_lat', value: String(coords.latitude) })
+        .onConflictDoUpdate({ target: settings.key, set: { value: String(coords.latitude) } }).run();
+      db.insert(settings).values({ key: 'location_lng', value: String(coords.longitude) })
+        .onConflictDoUpdate({ target: settings.key, set: { value: String(coords.longitude) } }).run();
+
+      router.push('/onboarding/account');
+    } catch {
+      setStatus('error');
+    }
   }
 
   function skipLocation() {
@@ -75,7 +92,14 @@ export default function OnboardingLocation() {
           {status === 'denied' && (
             <View className="bg-sand-200 rounded-xl p-4 mb-2">
               <Text className="text-ink-500 text-sm text-center">
-                Location access was denied. You can enable it in Settings, or continue without prayer time notifications.
+                Location access was denied. Enable it in your device Settings under Apps → Expo Go → Permissions → Location, then try again.
+              </Text>
+            </View>
+          )}
+          {status === 'error' && (
+            <View className="bg-sand-200 rounded-xl p-4 mb-2">
+              <Text className="text-ink-500 text-sm text-center">
+                Could not get your location. Make sure GPS is enabled, then try again.
               </Text>
             </View>
           )}

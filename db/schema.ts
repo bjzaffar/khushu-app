@@ -8,7 +8,7 @@ export const salahLogs = sqliteTable('salah_logs', {
   salahName: text('salah_name').notNull(),
   // Focus rating 1–5
   focusRating: integer('focus_rating').notNull(),
-  // Comma-separated distraction keys e.g. "work,financial,fatigue"
+  // Comma-separated distraction keys e.g. "work,financial,tired"
   distractions: text('distractions').notNull().default(''),
   // Optional free-text reflection (max 150 chars enforced in UI)
   reflectionText: text('reflection_text').default(''),
@@ -18,6 +18,10 @@ export const salahLogs = sqliteTable('salah_logs', {
   logDate: text('log_date').notNull(),
   // Whether this log was created via Salah Mode auto-flow
   fromSalahMode: integer('from_salah_mode', { mode: 'boolean' }).default(false),
+  // Reminder type used for this prayer (short, attribute, ayah, hadith)
+  reminderType: text('reminder_type'),
+  // Classified category for custom distractions (mapped to a built-in key by AI)
+  classifiedCategory: text('classified_category'),
 });
 
 // ─── Settings ─────────────────────────────────────────────────────────────────

@@ -1,17 +1,20 @@
 import { Coordinates, PrayerTimes as AdhanPrayerTimes, CalculationMethod, Madhab } from 'adhan';
-import type { SalahName, PrayerTimes, Location } from '@/types';
+import type { SalahName, PrayerTimes, Location, CalculationMethodKey, AsrMadhab } from '@/types';
 
 /**
  * Calculate prayer times for a given date and location using Adhan.js.
  * Fully offline — no network required.
- *
- * Calculation method: Muslim World League (widely accepted default).
- * Users can extend this to select their preferred method in Settings.
  */
-export function calculatePrayerTimes(location: Location, date: Date = new Date()): PrayerTimes {
+export function calculatePrayerTimes(
+  location: Location,
+  date: Date = new Date(),
+  methodKey: CalculationMethodKey = 'MuslimWorldLeague',
+  asrMadhab: AsrMadhab = 'Shafi'
+): PrayerTimes {
   const coords = new Coordinates(location.latitude, location.longitude);
-  const params = CalculationMethod.MuslimWorldLeague();
-  params.madhab = Madhab.Shafi;
+  const methodFn = CalculationMethod[methodKey as keyof typeof CalculationMethod] as () => ReturnType<typeof CalculationMethod.MuslimWorldLeague>;
+  const params = methodFn();
+  params.madhab = asrMadhab === 'Hanafi' ? Madhab.Hanafi : Madhab.Shafi;
 
   const adhan = new AdhanPrayerTimes(coords, date, params);
 

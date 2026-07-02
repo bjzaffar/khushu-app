@@ -1,0 +1,1177 @@
+# Khushu AI — Completion Plan
+
+> Living document. Last updated: 2026-07-02.
+
+---
+
+## Current Status
+
+The app is **feature-complete for core free-tier functionality**. All 8 screens, local database, prayer calculation, pattern engine, notification system, insights dashboard, and cloud sync are implemented and working.
+
+**What's missing:** AI-powered premium reminders, home screen widget, Apple Sign-In, monetization (IAP), testing, and production build configuration.
+
+---
+
+## Stage 1: AI-Powered Distraction Classification & Personalized Reminders (Premium Feature)
+
+**Priority:** Medium — differentiator for premium tier
+**Effort:** Large
+**Depends on:** Supabase Edge Functions
+
+### Goal
+
+When a premium user logs a custom distraction, use AI to classify it into one of the existing template categories and generate a personalized reminder. Custom distractions are **independent, first-class categories** — they count in pattern detection on their own, can become `topDistraction`, and do NOT merge into the pattern of their classified category. `classifiedCategory` is stored as metadata only.
+
+### Core Design Principle
+
+Custom distractions (`custom_<timestamp>` keys) behave identically to built-in categories:
+
+- **Pattern detection:** Custom keys are counted independently. A custom distraction can become `topDistraction`.
+- **Insights:** Custom distractions display with their user-given labels. They are NOT grouped under their classified category.
+- **Notifications:** When a custom key becomes `topDistraction`, the notification uses the cached AI reminder (generated at log time). No API call at notification time.
+- **Classification metadata:** `classifiedCategory` is stored but NOT used for pattern detection, insights, or notification selection. It exists for potential future use (e.g., "similar to Work" in insights).
+
+### How it works
+
+1. User logs a custom distraction (free text, e.g. "thinking about food", key: `custom_1719900000000`)
+2. At log time (fire-and-forget, doesn't block save):
+   a. AI classifies it → `classifiedCategory` stored as metadata
+   b. AI generates a personalized reminder → cached locally under the custom key (24h TTL)
+3. Pattern engine counts custom keys as independent categories alongside built-in keys
+4. If a custom key becomes `topDistraction`, `reminderContent.ts` reads the cached AI reminder
+5. If no cache exists (expired or generation failed), falls back to `cold_start` templates
+
+### Architecture
+
+```
+User logs custom distraction "thinking about food"
+  → log.tsx handleSave()
+    → classifyDistraction("thinking about food")        [fire-and-forget]
+      → POST Supabase Edge Function "classify-distraction"
+        → Claude Haiku returns "random"
+      → Store classifiedCategory = "random" (metadata only)
+    → generateAIReminder("thinking about food", "custom_1719...", "random", "fajr")
+      → POST Supabase Edge Function "generate-reminder"
+        → Claude Haiku returns personalized reminder text
+      → Cache: SecureStore["ai_cache_custom_1719..."] = { text, timestamp }
+
+...time passes...
+
+Pre-Salah notification fires for Fajr
+  → notificationService calls getReminderContent(pattern)
+    → pattern.topDistraction = "custom_1719..."  (it became top!)
+    → topKey.startsWith('custom_') → true
+    → getCachedReminder("custom_1719...") → cached text
+    → Returns { text: "...", type: 'ai' }
+```
+
+### Implementation Details
+
+#### 1. Supabase Edge Function — `classify-distraction`
+
+**Purpose:** Classify free-text distraction into one of 7 built-in categories. Lightweight — small prompt, short response, minimal token cost.
+
+**Request:** `{ "text": "thinking about food" }`
+**Response:** `{ "category": "random" }` or `{ "category": null }`
+
+**Full prompt:**
+```
+You are a distraction classifier for a Muslim prayer focus app.
+
+The user logged this distraction before salah:
+"{text}"
+
+Classify it into EXACTLY one of these categories:
+- work (job tasks, deadlines, work emails, colleagues)
+- financial (money, bills, debt, provision, rizq)
+- anxiety (future worry, fear, uncertainty, what-ifs)
+- tired (fatigue, sleepiness, low energy)
+- guilt (past sins, regret, remorse)
+- rushing (hurry, running late, time pressure)
+- random (wandering mind, unrelated thoughts, daydreaming)
+
+Return ONLY the category key as a single word. If the text does not clearly fit any category, return nothing.
+```
+
+**Config:**
+- Model: `claude-3-5-haiku-20241022` (cheapest, fastest)
+- Max tokens: 10
+- Temperature: 0 (deterministic)
+- Auth: Verify Supabase JWT from `Authorization` header, use `SUPABASE_SERVICE_ROLE_KEY` for internal operations
+
+**Edge Function skeleton:**
+```typescript
+// supabase/functions/classify-distraction/index.ts
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
+  try {
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      { global: { headers: { Authorization: authHeader } } }
+    );
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const { text } = await req.json();
+    if (!text || typeof text !== "string" || text.length > 200) {
+      return new Response(JSON.stringify({ error: "text is required and must be under 200 characters" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Rate limit check
+    if (isRateLimited(user.id)) {
+      return new Response(JSON.stringify({ error: "Rate limit exceeded" }), {
+        status: 429,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-3-5-haiku-20241022",
+        max_tokens: 10,
+        temperature: 0,
+        messages: [{ role: "user", content: /* prompt above */ }],
+      }),
+    });
+
+    const data = await response.json();
+    const raw = (data.content?.[0]?.text ?? "").trim().toLowerCase();
+    const validKeys = ["work", "financial", "anxiety", "tired", "guilt", "rushing", "random"];
+    const category = validKeys.includes(raw) ? raw : null;
+
+    return new Response(JSON.stringify({ category }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch {
+    return new Response(JSON.stringify({ error: "Internal error" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+});
+```
+
+#### 2. Supabase Edge Function — `generate-reminder`
+
+**Purpose:** Generate a personalized reminder for custom distractions. Called at log time, result cached for notification time.
+
+**Request:**
+```json
+{
+  "text": "my cat is sick",
+  "closestCategory": "anxiety",
+  "prayerName": "fajr",
+  "llmGuidance": {
+    "theme": "Allah as the direct answer to fear of the unknown",
+    "avoid": "telling them anxiety is irrational, minimising their fears",
+    "tone": "calming, direct, making Allah the shelter not just a concept"
+  }
+}
+```
+
+**Response:** `{ "reminder": "Your cat's wellbeing is in the hands of Al-Hafeez..." }`
+
+**Full prompt:**
+```
+You write pre-salah reminder notifications for a Muslim prayer focus app.
+
+The user is about to pray {prayerName}. Their specific distraction:
+"{text}"
+
+Closest category: {closestCategory}
+Theme: {llmGuidance.theme}
+Tone: {llmGuidance.tone}
+Avoid: {llmGuidance.avoid}
+
+Write ONE sentence (max 25 words) that:
+1. Names the specific distraction briefly
+2. Connects it to a relevant Divine Attribute or the theme
+3. Gently redirects attention to the prayer
+4. Matches the tone and avoids what's listed
+
+Return ONLY the reminder text, no quotes or formatting.
+```
+
+**Config:**
+- Model: `claude-3-5-haiku-20241022` (short generation, still cheap)
+- Max tokens: 60
+- Temperature: 0.7 (slight creativity for variety)
+- Auth: Same as classification function
+
+**Edge Function skeleton:**
+```typescript
+// supabase/functions/generate-reminder/index.ts
+// Same auth/CORS structure as classify-distraction
+// Body: { text, closestCategory, prayerName, llmGuidance }
+// Calls Claude API with the prompt above
+// Returns { reminder: string }
+```
+
+#### 3. `types/index.ts` — Type Changes
+
+```typescript
+// line 35 — add 'ai' to ReminderType:
+export type ReminderType = 'short' | 'attribute' | 'ayah' | 'hadith' | 'ai';
+
+// lines 37-42 — add label:
+export const REMINDER_TYPE_LABELS: Record<ReminderType, string> = {
+  short:     'Brief grounding',
+  attribute: 'Divine Attribute',
+  ayah:      'Quranic verse',
+  hadith:    'Hadith',
+  ai:        'AI Personalized',
+};
+
+// line 49 — widen topDistraction to accept custom keys:
+export interface PatternResult {
+  phase: ReminderPhase;
+  topDistraction: string | null;  // was DistractionKey | null
+  frequency: number;
+  logCount: number;
+  totalLogs: number;
+}
+```
+
+#### 4. `lib/patterns/patternEngine.ts` — Accept Custom Keys
+
+```typescript
+// line 49 — widen counts type:
+const counts: Record<string, number> = {};  // was Partial<Record<DistractionKey, number>>
+
+// lines 51, 60 — remove 'as DistractionKey[]' cast:
+const keys = (log.distractions ?? '').split(',').filter(Boolean);
+// ...
+for (const [key, n] of Object.entries(counts)) {
+```
+
+Everything else in the pattern engine works as-is — it splits the CSV, counts each key, and picks the max. Custom keys like `custom_1719900000000` will be counted and can become `topDistraction`.
+
+#### 5. `lib/notifications/reminderContent.ts` — Cache + AI Paths
+
+**New cache layer** (uses `expo-secure-store`):
+
+```typescript
+import * as SecureStore from 'expo-secure-store';
+import { supabase } from '@/lib/supabase/client';
+import type { DistractionKey, SalahName } from '@/types';
+
+interface CachedReminder { text: string; timestamp: number; }
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+function cacheKey(customKey: string): string {
+  return `ai_cache_${customKey}`;
+}
+
+function getCachedReminder(customKey: string): string | null {
+  const raw = SecureStore.getItem(cacheKey(customKey));
+  if (!raw) return null;
+  try {
+    const cached: CachedReminder = JSON.parse(raw);
+    if (Date.now() - cached.timestamp > CACHE_TTL_MS) {
+      SecureStore.deleteItem(cacheKey(customKey));
+      return null;
+    }
+    return cached.text;
+  } catch { return null; }
+}
+
+function setCachedReminder(customKey: string, reminder: string): void {
+  SecureStore.setItem(cacheKey(customKey), JSON.stringify({
+    text: reminder, timestamp: Date.now(),
+  }));
+}
+```
+
+**New exports:**
+
+```typescript
+export async function classifyDistraction(
+  text: string
+): Promise<DistractionKey | null> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return null;
+
+    const res = await fetch(
+      `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/classify-distraction`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+        },
+        body: JSON.stringify({ text }),
+      }
+    );
+    if (!res.ok) return null;
+    const { category } = await res.json();
+    return category as DistractionKey | null;
+  } catch { return null; }
+}
+
+export async function generateAIReminder(
+  text: string,
+  customKey: string,
+  closestCategory: DistractionKey,
+  prayerName: SalahName
+): Promise<string | null> {
+  const cached = getCachedReminder(customKey);
+  if (cached) return cached;
+
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return null;
+
+    const allDistractions = templates.distractions as Record<
+      string,
+      { llm_guidance: { theme: string; avoid: string; tone: string } }
+    >;
+    const guidance = allDistractions[closestCategory]?.llm_guidance;
+    if (!guidance) return null;
+
+    const res = await fetch(
+      `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/generate-reminder`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+        },
+        body: JSON.stringify({
+          text, closestCategory, prayerName, llmGuidance: guidance,
+        }),
+      }
+    );
+    if (!res.ok) return null;
+    const { reminder } = await res.json();
+    if (typeof reminder === 'string' && reminder.length > 0) {
+      setCachedReminder(customKey, reminder);
+      return reminder;
+    }
+    return null;
+  } catch { return null; }
+}
+```
+
+**Modified `getReminderContent()`:**
+
+```typescript
+export function getReminderContent(pattern: PatternResult): { text: string; type: ReminderType } {
+  const coldPool = templates.cold_start as TemplateEntry[];
+
+  if (pattern.phase === 'cold_start' || !pattern.topDistraction) {
+    return pick(coldPool);
+  }
+
+  const topKey = pattern.topDistraction;
+
+  // Custom key → use cached AI reminder
+  if (topKey.startsWith('custom_')) {
+    const cached = getCachedReminder(topKey);
+    if (cached) return { text: cached, type: 'ai' };
+    return pick(coldPool); // fallback if cache expired
+  }
+
+  // Built-in key → use template
+  const allDistractions = templates.distractions as Record<string, { established: TemplateEntry[] }>;
+  const entry = allDistractions[topKey];
+  if (!entry) return pick(coldPool);
+  return pick(entry.established);
+}
+```
+
+#### 6. `app/(tabs)/log.tsx` — `handleSave()` Modification
+
+Insert classification + caching after DB insert. **Fire-and-forget** — does not block the save.
+
+```typescript
+async function handleSave() {
+  if (focusRating === 0 || selectedDistractions.length === 0) return;
+  const now = new Date();
+
+  const pendingKey = `pending_reminder_type_${selectedSalah}`;
+  const pendingRow = db.select().from(settings).where(eq(settings.key, pendingKey)).get();
+  const reminderType = pendingRow?.value ?? null;
+
+  await db.insert(salahLogs).values({
+    salahName: selectedSalah,
+    focusRating,
+    distractions: selectedDistractions.join(','),
+    loggedAt: now.getTime(),
+    logDate: now.toISOString().split('T')[0],
+    fromSalahMode: params.fromSalahMode === '1',
+    reminderType,
+  });
+
+  if (pendingRow) {
+    db.delete(settings).where(eq(settings.key, pendingKey)).run();
+  }
+
+  // ── AI for custom distractions (premium only, fire-and-forget) ───────
+  if (isPremium) {
+    const customEntries = selectedDistractions
+      .filter((k) => k.startsWith('custom_'))
+      .map((key) => ({
+        key,
+        label: customDistractions.find((d) => d.key === key)?.label ?? key,
+      }));
+
+    if (customEntries.length > 0) {
+      (async () => {
+        for (const { key, label } of customEntries) {
+          // Classify (metadata only — doesn't affect pattern/insights)
+          const category = await classifyDistraction(label);
+          if (category) {
+            db.update(salahLogs)
+              .set({ classifiedCategory: category })
+              .where(eq(salahLogs.loggedAt, now.getTime()))
+              .run();
+          }
+
+          // Generate + cache AI reminder for when this key becomes topDistraction
+          const closestCategory = category ?? 'random';
+          await generateAIReminder(label, key, closestCategory, selectedSalah);
+        }
+      })();
+    }
+  }
+
+  // Cloud sync (fire-and-forget)
+  if (userId) {
+    supabase.from('salah_logs').insert({
+      user_id: userId,
+      salah_name: selectedSalah,
+      focus_rating: focusRating,
+      distractions: selectedDistractions.join(','),
+      logged_at: now.getTime(),
+      log_date: now.toISOString().split('T')[0],
+      from_salah_mode: params.fromSalahMode === '1',
+      reminder_type: reminderType,
+    }).then(({ error }) => {
+      if (error) console.warn('[sync] salah_logs insert failed:', error.message);
+    });
+  }
+
+  await cancelPostSalahForSalah(selectedSalah);
+  await cancelReEngagementNotification();
+  setSavedSalahName(selectedSalah);
+  setSaved(true);
+}
+```
+
+**Imports to add to log.tsx:**
+```typescript
+import { classifyDistraction, generateAIReminder } from '@/lib/notifications/reminderContent';
+```
+
+**TextInput change (add `maxLength` and slice guard):**
+```tsx
+<TextInput
+  value={otherInputText}
+  onChangeText={(t) => setOtherInputText(t.slice(0, 100))}
+  maxLength={100}
+  placeholder="e.g. Hunger, Noise…"
+  // ... rest unchanged
+/>
+```
+
+**`handleAddCustomDistraction()` — add hard cap:**
+```typescript
+function handleAddCustomDistraction() {
+  const label = otherInputText.trim().slice(0, 100);
+  if (!label) return;
+  // ... rest unchanged
+}
+```
+
+#### 7. `lib/supabase/sync.ts` — Add `classified_category`
+
+```typescript
+// line 16 — add to select:
+.select('salah_name, focus_rating, distractions, logged_at, log_date, from_salah_mode, reminder_type, classified_category')
+
+// line 32-40 — add to insert:
+db.insert(salahLogs).values({
+  salahName: row.salah_name,
+  focusRating: row.focus_rating,
+  distractions: row.distractions ?? '',
+  loggedAt: row.logged_at,
+  logDate: row.log_date,
+  fromSalahMode: row.from_salah_mode ?? false,
+  reminderType: row.reminder_type,
+  classifiedCategory: row.classified_category,
+}).run();
+```
+
+#### 8. `lib/notifications/notificationService.ts` — No Changes Needed
+
+The notification service calls `getReminderContent(pattern)` which now handles custom keys internally. When a custom key is `topDistraction`, the function checks the cache and returns `{ text, type: 'ai' }`. The pending type save (lines 57-60) stores whatever `reminderType` is returned, so `'ai'` flows through automatically.
+
+### Cache Strategy
+
+| Aspect | Detail |
+|---|---|
+| **Storage** | `expo-secure-store` (already a dependency) |
+| **Key** | `ai_cache_{customKey}` (e.g., `ai_cache_custom_1719900000000`) |
+| **Value** | JSON: `{ "text": "reminder text", "timestamp": 1234567890 }` |
+| **TTL** | 24 hours. Expired entries deleted on read. |
+| **Write** | After `generateAIReminder()` returns successfully (at log time) |
+| **Read** | In `getReminderContent()` when `topDistraction` starts with `custom_` |
+| **Why secure-store** | Already used by Supabase auth. Simple key-value. No new dependencies. |
+
+### Edge Cases & Error Handling
+
+| Scenario | Handling |
+|---|---|
+| Network failure on classification | Log saved. Next time same custom distraction is logged, classification retries. No user-facing error. |
+| Edge Function returns unexpected JSON | Parse defensively. Invalid/empty → `null` (treated as unclassified). |
+| User not authenticated | Classification requires auth. No session → skip silently. |
+| Cache expired before notification fires | `getReminderContent()` falls back to `cold_start` templates. |
+| Multiple custom distractions in one log | Each classified independently. `classifiedCategory` stores the first one's classification (single column). Cache stores a reminder for each custom key. |
+| Claude API rate limiting | Haiku has generous limits. At launch scale (~10-100 users), not a concern. Add rate limiter on Edge Function if needed later. |
+| `classifiedCategory` column already exists | Schema migration already in `db/database.ts` line 34. No new migration needed. |
+
+### Abuse Prevention & Cost Protection
+
+Three layers prevent a user from typing malicious/extremely long text to inflate API costs:
+
+#### Layer 1: Client-side (log.tsx)
+
+**TextInput `maxLength`:** Cap the input at 100 characters. This is the primary gate — a distraction label like "thinking about food" is naturally short. 100 chars covers generous descriptions.
+
+```tsx
+<TextInput
+  value={otherInputText}
+  onChangeText={(t) => setOtherInputText(t.slice(0, 100))}
+  maxLength={100}
+  placeholder="e.g. Hunger, Noise…"
+  // ...
+/>
+```
+
+**Guard in `handleAddCustomDistraction()`:**
+
+```typescript
+function handleAddCustomDistraction() {
+  const label = otherInputText.trim().slice(0, 100); // hard cap
+  if (!label) return;
+  // ... rest unchanged
+}
+```
+
+#### Layer 2: Server-side (Edge Functions)
+
+Both Edge Functions validate input length **before** calling Claude. Reject with 400 if too long.
+
+```typescript
+// At the top of both Edge Functions, after parsing body:
+const { text } = await req.json();
+if (!text || typeof text !== "string" || text.length > 200) {
+  return new Response(
+    JSON.stringify({ error: "text is required and must be under 200 characters" }),
+    { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+  );
+}
+```
+
+200 chars is the server-side limit (2× the client limit) — a safety margin for edge cases, while still keeping token costs negligible.
+
+#### Layer 3: Per-user Rate Limiting (Edge Functions)
+
+Cap API calls per user to prevent abuse. Use a simple in-memory sliding window (resets on Edge Function cold start, which is fine for abuse prevention — not security-critical).
+
+```typescript
+// Per-Edge-Function, at module scope:
+const rateLimits = new Map<string, number[]>(); // userId → timestamps
+const RATE_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+const RATE_MAX = 30; // 30 calls per hour per user
+
+function isRateLimited(userId: string): boolean {
+  const now = Date.now();
+  const timestamps = rateLimits.get(userId) ?? [];
+  const recent = timestamps.filter((t) => now - t < RATE_WINDOW_MS);
+  if (recent.length >= RATE_MAX) return true;
+  recent.push(now);
+  rateLimits.set(userId, recent);
+  return false;
+}
+
+// In the handler, after auth:
+if (isRateLimited(user.id)) {
+  return new Response(
+    JSON.stringify({ error: "Rate limit exceeded. Try again later." }),
+    { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+  );
+}
+```
+
+**Why in-memory is acceptable:** Edge Functions run on Deno Deploy with automatic scaling. Each instance has its own memory, so the limit is per-instance, not global. This is intentional — it prevents runaway costs from a single user while allowing legitimate use across instances. At MVP scale, this is sufficient. If needed later, replace with a Supabase `rate_limits` table for a global limit.
+
+#### Cost Analysis With Limits
+
+| Constraint | Value |
+|---|---|
+| Client max input | 100 chars |
+| Server max input | 200 chars |
+| Max per user per hour | 30 calls |
+| Claude Haiku input cost | $0.25 / 1M tokens (~750 tokens per 200 chars) |
+| **Worst-case cost per user per hour** | 30 × $0.0002 = **$0.006** |
+| **Worst-case cost per 100 users per hour** | **$0.60** |
+| **Monthly cap (100 users, 24h active)** | **~$430** (theoretical max; real usage is ~$6) |
+
+In practice, most users will log 1-5 custom distractions per day, not 30 per hour. The real cost remains ~$6/month for 100 users.
+
+### Deleted Custom Distractions — Archive & Reactivation
+
+#### Problem
+
+When a user deletes a custom distraction, it's removed from the `custom_distractions` setting. But past log entries in `salahLogs` still reference the `custom_*` key. The insights page resolves labels via `customLabelMap` (line 650 of `insights.tsx`), which only reads active custom distractions. The fallback is the raw key string — so deleted distractions display as `custom_1719900000000` in insights and per-salah breakdowns.
+
+#### Solution: Archive Deleted Labels
+
+Store deleted custom distractions in a separate `deleted_custom_distractions` setting. This preserves labels for historical display without polluting the active list.
+
+**Settings keys:**
+| Key | Value | Purpose |
+|---|---|---|
+| `custom_distractions` | `[{ key, label }, ...]` | Active custom distractions (shown in chip list) |
+| `deleted_custom_distractions` | `[{ key, label }, ...]` | Archived labels (used by insights for historical display) |
+
+#### How it works
+
+**On delete (log.tsx `handleDeleteCustom`):**
+1. Remove from `custom_distractions` (existing behavior)
+2. Append to `deleted_custom_distractions` (new)
+
+**On insights render (insights.tsx):**
+1. Build `customLabelMap` from `custom_distractions` (existing)
+2. Build `deletedLabelMap` from `deleted_custom_distractions` (new)
+3. Resolve label: `DISTRACTION_LABELS[key] ?? customLabelMap[key] ?? deletedLabelMap[key] ?? "Deleted distraction"`
+
+**On reactivation (log.tsx):**
+1. New "Reactivate" section in edit mode shows archived distractions
+2. User taps one → moves from `deleted_custom_distractions` back to `custom_distractions`
+3. Key is preserved, so existing logs now resolve to the restored label
+
+#### Implementation
+
+**`app/(tabs)/log.tsx` — `handleDeleteCustom()`:**
+
+```typescript
+function handleDeleteCustom(key: string) {
+  // Remove from active list
+  const deleted = customDistractions.find((d) => d.key === key);
+  const newList = customDistractions.filter((d) => d.key !== key);
+  setCustomDistractions(newList);
+  saveSettingJSON('custom_distractions', newList);
+  setSelectedDistractions((prev) => prev.filter((k) => k !== key));
+
+  // Archive the label
+  if (deleted) {
+    const archive = getSettingJSON('deleted_custom_distractions') as { key: string; label: string }[];
+    archive.push({ key: deleted.key, label: deleted.label });
+    saveSettingJSON('deleted_custom_distractions', archive);
+  }
+}
+```
+
+**New: `getSettingJSON()` helper** (extract from existing inline logic):
+```typescript
+function getSettingJSON(key: string): unknown[] {
+  const row = db.select().from(settings).where(eq(settings.key, key)).get();
+  if (!row) return [];
+  try { return JSON.parse(row.value); } catch { return []; }
+}
+```
+
+**New: `handleReactivate(key)` in log.tsx:**
+```typescript
+function handleReactivate(key: string) {
+  const archive = getSettingJSON('deleted_custom_distractions') as { key: string; label: string }[];
+  const found = archive.find((d) => d.key === key);
+  if (!found) return;
+
+  // Move from archive to active
+  const newActive = [...customDistractions, found];
+  setCustomDistractions(newActive);
+  saveSettingJSON('custom_distractions', newActive);
+
+  const newArchive = archive.filter((d) => d.key !== key);
+  saveSettingJSON('deleted_custom_distractions', newArchive);
+}
+```
+
+**UI: Reactivation section in edit mode** (log.tsx, after custom chips in edit mode):
+```tsx
+{editMode && (() => {
+  const archive = getSettingJSON('deleted_custom_distractions') as { key: string; label: string }[];
+  if (archive.length === 0) return null;
+  return (
+    <View className="mt-3">
+      <Text className="text-xs text-ink-300 mb-2">Deleted — tap to reactivate:</Text>
+      <View className="flex-row flex-wrap gap-2">
+        {archive.map(({ key, label }) => (
+          <Pressable
+            key={key}
+            onPress={() => handleReactivate(key)}
+            className="py-2 px-3 rounded-xl bg-sand-100 border border-dashed border-sand-300 flex-row items-center"
+          >
+            <Text className="text-ink-400 text-sm">{label}</Text>
+            <Text className="text-sage-600 text-xs ml-1.5">↻</Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+})()}
+```
+
+**`app/(tabs)/insights.tsx` — Label resolution (lines 632-650):**
+
+```typescript
+// Build active label map (existing)
+const customLabelMap: Record<string, string> = {};
+const customRow = db.select().from(settings).where(eq(settings.key, 'custom_distractions')).get();
+if (customRow) {
+  try {
+    const list = JSON.parse(customRow.value) as { key: string; label: string }[];
+    for (const d of list) customLabelMap[d.key] = d.label;
+  } catch {}
+}
+
+// Build deleted label map (new)
+const deletedLabelMap: Record<string, string> = {};
+const deletedRow = db.select().from(settings).where(eq(settings.key, 'deleted_custom_distractions')).get();
+if (deletedRow) {
+  try {
+    const list = JSON.parse(deletedRow.value) as { key: string; label: string }[];
+    for (const d of list) deletedLabelMap[d.key] = d.label;
+  } catch {}
+}
+
+// Updated label resolution chain (line 650):
+label: DISTRACTION_LABELS[key as DistractionKey]
+  ?? customLabelMap[key]
+  ?? deletedLabelMap[key]
+  ?? 'Deleted distraction',
+```
+
+Same change in `computeSalahInsights()` — pass `deletedLabelMap` alongside `customLabelMap`, update the resolution chain at line 191.
+
+#### Pattern Engine Impact
+
+Deleted custom distractions continue to work in pattern detection — the `distractions` column still contains the `custom_*` key, and the pattern engine counts all keys (including `custom_*`) as independent categories. No changes needed to `patternEngine.ts`.
+
+#### Edge Function Impact
+
+Classification and generation Edge Functions are unaffected — they operate on the distraction text at log time, before any deletion happens.
+
+#### Files Summary (Updated)
+
+| File | Action | What Changes |
+|---|---|---|
+| `app/(tabs)/log.tsx` | MODIFY | `handleDeleteCustom()` archives label. New `handleReactivate()`. New reactivation UI in edit mode. Add `getSettingJSON()` helper. |
+| `app/(tabs)/insights.tsx` | MODIFY | Build `deletedLabelMap`. Update label resolution chain in both global and per-salah sections. |
+
+### Cost Estimation
+
+| Operation | Tokens | Cost per call |
+|---|---|---|
+| Classification (Haiku) | ~100 in + 1 out | ~$0.0001 |
+| Generation (Haiku) | ~200 in + 30 out | ~$0.0002 |
+| **10 custom distractions/day** | | **~$0.002/day (~$0.06/month)** |
+| **100 users × 10 distractions** | | **~$0.20/day (~$6/month)** |
+
+### Setup Steps (Manual — One-Time)
+
+1. Install Supabase CLI: `npm i -g supabase`
+2. Initialize: `supabase init` (creates `supabase/` directory)
+3. Link to project: `supabase link --project-ref nlxerxxchinetzxjbmju`
+4. Set Anthropic API key as secret: `supabase secrets set ANTHROPIC_API_KEY=sk-ant-...`
+5. Deploy functions: `supabase functions deploy classify-distraction` and `supabase functions deploy generate-reminder`
+6. Test: `supabase functions invoke classify-distraction --body '{"text":"thinking about work deadlines"}'`
+
+### Implementation Order
+
+1. `types/index.ts` — Add `'ai'` to `ReminderType`, widen `topDistraction` to `string | null`
+2. `lib/patterns/patternEngine.ts` — Widen `counts` type to `Record<string, number>`
+3. `supabase/functions/classify-distraction/index.ts` — Create Edge Function
+4. `supabase/functions/generate-reminder/index.ts` — Create Edge Function
+5. `lib/notifications/reminderContent.ts` — Add cache layer, `classifyDistraction()`, `generateAIReminder()`, update `getReminderContent()`
+6. `app/(tabs)/log.tsx` — Wire classification + caching into `handleSave()`. Add `handleDeleteCustom()` archive logic, `handleReactivate()`, reactivation UI, `getSettingJSON()` helper. Add `maxLength` to TextInput.
+7. `app/(tabs)/insights.tsx` — Build `deletedLabelMap`, update label resolution chain
+8. `lib/supabase/sync.ts` — Add `classified_category` to cloud sync
+9. Deploy Edge Functions to Supabase
+10. Test end-to-end
+
+### Files Summary
+
+| File | Action | What Changes |
+|---|---|---|
+| `types/index.ts` | MODIFY | Add `'ai'` to `ReminderType`. Widen `topDistraction: string \| null`. |
+| `lib/patterns/patternEngine.ts` | MODIFY | `counts` type: `Record<string, number>`. Remove `DistractionKey` casts. |
+| `lib/notifications/reminderContent.ts` | MODIFY | Add cache layer, `classifyDistraction()`, `generateAIReminder()`. Update `getReminderContent()` for custom keys. |
+| `app/(tabs)/log.tsx` | MODIFY | Add classification + cache generation in `handleSave()`. Add imports. Archive deleted labels on delete. New `handleReactivate()`, reactivation UI in edit mode. Add `getSettingJSON()` helper. Add `maxLength` to TextInput. |
+| `app/(tabs)/insights.tsx` | MODIFY | Build `deletedLabelMap` from `deleted_custom_distractions` setting. Update label resolution chain in global and per-salah sections. |
+| `lib/supabase/sync.ts` | MODIFY | Add `classified_category` to cloud sync pull + insert. |
+| `supabase/functions/classify-distraction/index.ts` | CREATE | Edge Function: classify text → category key or null. |
+| `supabase/functions/generate-reminder/index.ts` | CREATE | Edge Function: generate personalized reminder. |
+| `db/schema.ts` | NO CHANGE | `classifiedCategory` column already exists (line 24). |
+| `db/database.ts` | NO CHANGE | Migration already present (line 34). |
+| `lib/notifications/notificationService.ts` | NO CHANGE | `getReminderContent()` handles custom keys internally. |
+| `content/reminders/distraction_templates.json` | NO CHANGE | `llm_guidance` already present, used by generation prompt. |
+
+---
+
+## Stage 2: Home Screen Widget (Heatmap)
+
+**Priority:** Medium — nice-to-have visual feature
+**Effort:** Large
+**Depends on:** None (independent of other stages)
+
+### Goal
+
+A native home screen widget displaying a 7-day prayer heatmap: 7 columns (today + 6 previous days) × 5 rows (Fajr → Isha). Each cell is a rounded square — grey for unlogged prayers, jade green with saturation mapped to focus rating (1 = 20% opacity, 5 = 100%) for logged prayers.
+
+### Design
+
+```
+        Mon  Tue  Wed  Thu  Fri  Sat  Sun
+Fajr    [■]  [■]  [■]  [■]  [■]  [■]  [■]
+Dhuhr   [■]  [■]  [■]  [■]  [■]  [■]  [■]
+Asr     [■]  [■]  [■]  [■]  [■]  [■]  [■]
+Maghrib [■]  [■]  [■]  [■]  [■]  [■]  [■]
+Isha    [■]  [■]  [■]  [■]  [■]  [■]  [■]
+```
+
+- Cell size: ~32×32px, 4px gap, rounded corners
+- Grey: `#EFE8D8` (unlogged)
+- Green: `#5A7A5A` at 20%–100% opacity (logged, rating 1–5)
+
+### Data sharing
+
+Native widgets cannot read the app's SQLite database directly. A shared data layer is needed:
+
+| Platform | Approach |
+|---|---|
+| **iOS** | App Group shared container — app writes a JSON summary after each log, widget extension reads it |
+| **Android** | ContentProvider or shared SharedPreferences with world-readable mode |
+
+**Shared format**: JSON array of 35 entries `{ day: string, salah: string, rating: number | null }` representing 7 days × 5 prayers.
+
+### Steps
+
+1. **Shared data writer (`lib/widget/widgetData.ts`)**
+   - Build heatmap JSON from last 7 days of `salahLogs`
+   - Write to platform-specific shared storage (App Group on iOS, ContentProvider on Android)
+   - Call after each `handleSave()` in `log.tsx`
+
+2. **iOS WidgetKit extension**
+   - Create WidgetKit extension target in Xcode (via `expo-widget` plugin or manual)
+   - `SalahHeatmapWidget` in SwiftUI using `TimelineProvider`
+   - Read JSON from App Group container
+   - Render grid using `LazyVGrid`
+   - Widget size: medium (~329×155pt) or large
+
+3. **Android App Widget**
+   - Create `SalahHeatmapWidgetProvider` in Kotlin
+   - Define widget layout XML with `GridLayout` (7×5)
+   - Register in `AndroidManifest.xml` as `<receiver>`
+   - Read data from ContentProvider/SharedPreferences
+   - Update via `AppWidgetManager` after each log
+
+4. **Update trigger**
+   - After `handleSave()` in `app/(tabs)/log.tsx`, call the shared data writer
+   - Notify widget to refresh (`WidgetKit.reloadAllTimelines` on iOS, `AppWidgetManager.updateAppWidget` on Android)
+
+### Files to create/modify
+
+| File | Change |
+|---|---|
+| `lib/widget/widgetData.ts` | Shared heatmap JSON builder + platform write logic |
+| `app/(tabs)/log.tsx` | Call widget data update after save |
+| `ios/` (Xcode) | New WidgetKit extension target with SwiftUI views |
+| `android/app/src/main/kotlin/` | New widget provider + layout XML + manifest entry |
+| `app.json` | iOS config plugin for widget extension if using `expo-widget` |
+
+---
+
+## Stage 3: Apple Sign-In
+
+**Priority:** Medium — required for iOS App Store
+**Effort:** Small
+**Depends on:** Apple Developer account
+
+### Goal
+
+Enable "Sign in with Apple" on iOS devices.
+
+### Code implementation
+
+Done — `expo-apple-authentication` installed, `handleApple()` implemented in `app/onboarding/account.tsx`, entitlements added to `app.json`.
+
+### Remaining manual steps
+
+1. **Enroll in Apple Developer Program**
+   - Go to [developer.apple.com/account](https://developer.apple.com/account)
+   - Click **Enroll today** and complete enrollment ($99/year)
+   - Wait for approval (usually instant, up to 48 hours)
+
+2. **Enable Sign in with Apple capability**
+   - Go to Certificates, Identifiers & Profiles → Identifiers
+   - Select app ID `com.khushuai.app`
+   - Under Capabilities, enable **Sign In with Apple**
+   - Click Configure → select "Enable as a primary App ID"
+   - Save
+
+3. **Create Apple Service ID**
+   - Go to Certificates, Identifiers & Profiles → Identifiers → click **+**
+   - Select **Services IDs** → Continue
+   - Name: "Khushu AI Supabase Auth", Identifier: `com.khushuai.supabase`
+   - Enable **Sign In with Apple** → Configure
+   - Add Supabase callback URL as Return URL: `https://<your-project-ref>.supabase.co/auth/v1/callback`
+   - Save
+
+4. **Create Apple Sign-In key**
+   - Go to Certificates, Identifiers & Profiles → Keys → click **+**
+   - Name: "Sign in with Apple Key"
+   - Enable **Sign In with Apple**
+   - Register the key → **download the `.p8` file** (only downloadable once)
+   - Note the **Key ID**
+
+5. **Configure Supabase**
+   - Go to Supabase dashboard → Authentication → Providers → Apple
+   - Enable Apple provider
+   - Enter Service ID, Team ID, Key ID, and paste/upload the private key
+   - Set Redirect URI to: `https://<your-project-ref>.supabase.co/auth/v1/callback`
+   - Save
+
+6. **Test on physical iOS device**
+   - Run `npx expo run:ios` on a physical device (not simulator)
+   - Tap **Sign in with Apple** on the account screen
+   - Complete the Apple ID flow
+   - Verify you're redirected into the app and the user is created in Supabase
+
+---
+
+## Stage 4: In-App Purchase Integration (RevenueCat)
+
+**Priority:** High — gates all premium features
+**Effort:** Medium
+**Depends on:** App Store Connect + Google Play Console accounts
+
+### Goal
+
+Enable subscription-based monetization so premium features (AI reminders, full trend charts, distraction editing, cloud sync) become functional.
+
+### Steps
+
+1. **Account setup**
+   - Create developer accounts on App Store Connect and Google Play Console
+   - Set up subscription products (e.g., "Premium Monthly" and "Premium Yearly")
+
+2. **RevenueCat setup**
+   - Install `react-native-purchases` (RevenueCat's React Native SDK)
+   - Create RevenueCat project, configure products, entitlements ("premium"), and offering packages
+   - Connect to App Store Connect and Google Play Console via API keys
+
+3. **Paywall screen rewrite (`app/paywall.tsx`)**
+   - Fetch available packages from RevenueCat on mount
+   - Display real pricing and trial offers
+   - Wire `purchasePremium()` to `Purchases.purchasePackage()`
+   - Wire `restorePurchases()` to `Purchases.restorePurchases()`
+   - On success: call `useAppStore.getState().setIsPremium(true)` and navigate back
+   - Handle errors (cancelled, pending, network issues)
+
+4. **Premium status check on startup (`app/_layout.tsx`)**
+   - After Supabase session restore, call `Purchases.syncPurchases()` and check entitlement status
+   - Set `isPremium` in the store accordingly
+   - Handle subscription expiration gracefully
+
+5. **Subscription check on auth (`app/onboarding/account.tsx:53`)**
+   - After `onAuthSuccess()`, query RevenueCat for the user's entitlement status
+   - Call `setIsPremium(true/false)` based on the result
+
+6. **Google OAuth deep link (`app/onboarding/account.tsx:110`)**
+   - Ensure `khushuai://auth/callback` redirect URI is configured in Supabase dashboard
+   - Test the OAuth flow end-to-end on Android
+
+### Files to modify
+
+| File | Change |
+|---|---|
+| `app/paywall.tsx` | Complete rewrite of purchase/restore logic |
+| `app/_layout.tsx` | Add RevenueCat initialization + premium check |
+| `app/onboarding/account.tsx` | Add subscription check + fix Google OAuth redirect |
+| `store/appStore.ts` | Add RevenueCat-specific state if needed |
+| `package.json` | Add `react-native-purchases` |
+| `app.json` | Add RevenueCat config if needed |
+
+---
+
+## Stage 5: Testing
+
+**Priority:** High — required before production release
+**Effort:** Medium-Large
+**Depends on:** Stages 1-4 complete
+
+### Goal
+
+Establish a test suite covering core logic, integration flows, and E2E user journeys.
+
+### Steps
+
+1. **Choose frameworks**
+   - Unit/Integration: `Jest` (already included with Expo) + `React Native Testing Library`
+   - E2E: `Maestro` (recommended for React Native — simpler than Detox)
+
+2. **Unit tests for core logic**
+   - `lib/prayer/prayerTimes.ts` — test calculation with known locations/dates
+   - `lib/patterns/patternEngine.ts` — test phase classification with mock DB data
+   - `lib/notifications/reminderContent.ts` — test content selection for each phase/distraction
+   - `lib/notifications/notificationService.ts` — test scheduling logic (mock expo-notifications)
+
+3. **Integration tests**
+   - Database operations (insert, query, update settings)
+   - Zustand store state transitions
+   - Auth flow (mock Supabase)
+
+4. **E2E tests (Maestro)**
+   - Onboarding flow → location → account → main tabs
+   - Log a prayer → verify in insights
+   - Settings changes → verify notifications reschedule
+
+5. **Add test scripts to `package.json`**
+
+### Files to create
+
+| Path | Purpose |
+|---|---|
+| `__tests__/` | Unit and integration test files |
+| `jest.config.js` | Jest configuration (if customization needed) |
+| `.maestro/` | E2E flow definitions |
+
+---
+
+## Stage 6: Production Build & Store Submission
+
+**Priority:** High — launch requirement
+**Effort:** Medium
+**Depends on:** Stages 1-5
+
+### Goal
+
+Build signed binaries, configure store listings, and submit to App Store + Google Play.
+
+### Steps
+
+1. **Production signing**
+   - Android: Generate proper keystore (currently using debug keystore at `android/app/build.gradle:115`)
+   - iOS: Set up Apple Developer certificates, provisioning profiles
+
+2. **EAS Submit configuration (`eas.json`)**
+   - Fill `submit` section with App Store Connect and Google Play credentials
+   - Configure app metadata, screenshots, descriptions
+
+3. **App Store assets**
+   - Screenshots for all device sizes
+   - App description, keywords, categories
+   - Privacy policy URL
+   - App icon (already exists)
+
+4. **Build**
+   ```bash
+   eas build --platform ios --profile production
+   eas build --platform android --profile production
+   ```
+
+5. **Submit**
+   ```bash
+   eas submit --platform ios
+   eas submit --platform android
+   ```
+
+6. **Post-submission**
+   - Monitor crash reports (Expo has built-in crash reporting)
+   - Respond to app review feedback
+   - Plan iterative updates based on user feedback
+
+---
+
+## Stage 7: Post-Launch Enhancements (Optional)
+
+Lower priority, can be tackled iteratively after launch.
+
+| Enhancement | Effort | Notes |
+|---|---|---|
+| Reflection text field | Small | Schema field exists (`reflectionText`) but no UI. Add optional text input to log screen. |
+| Extracted Salah components | Small | `components/salah/` is empty. Extract reusable pieces from `salah-mode.tsx`. |
+| Haptics | Small | Add subtle haptic feedback on star rating, chip selection, save |
+| Localization | Large | Arabic, Urdu, Malay, Turkish, etc. |
+| Onboarding tooltips | Small | In-app guidance overlays for first-time users |
+| Dark mode | Medium | Extend the sand/sage/ink palette with dark variants |
+| Data export | Small | Let users export their logs as CSV |
+
+---
+
+## Execution Order
+
+```
+Stage 1 (AI reminders)
+    │
+    ▼
+Stage 2 (Home screen widget)
+    │
+    ▼
+Stage 3 (Apple Sign-In)
+    │
+    ▼
+Stage 4 (RevenueCat IAP)
+    │
+    ▼
+Stage 5 (Testing)
+    │
+    ▼
+Stage 6 (Production build & submission)
+    │
+    ▼
+Stage 7 (Post-launch polish)
+```

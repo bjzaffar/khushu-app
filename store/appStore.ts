@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Location, PrayerTimes, SalahName } from '@/types';
+import type { Location, PrayerTimes, SalahName, CalculationMethodKey, AsrMadhab } from '@/types';
 
 interface AppState {
   // ── Onboarding ──────────────────────────────────────────────────────────────
@@ -28,6 +28,22 @@ interface AppState {
   setReminderMinutesBefore: (mins: number) => void;
   postSalahPromptEnabled: boolean;
   setPostSalahPromptEnabled: (val: boolean) => void;
+
+  // ── Prayer calculation settings ───────────────────────────────────────────────
+  calculationMethod: CalculationMethodKey;
+  setCalculationMethod: (method: CalculationMethodKey) => void;
+  asrMadhab: AsrMadhab;
+  setAsrMadhab: (madhab: AsrMadhab) => void;
+
+  // ── DND preference ────────────────────────────────────────────────────────────
+  dndDuringSalah: boolean;
+  setDndDuringSalah: (val: boolean) => void;
+
+  // ── Auth & Premium ────────────────────────────────────────────────────────────
+  userId: string | null;
+  setUserId: (id: string | null) => void;
+  isPremium: boolean;
+  setIsPremium: (val: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -56,4 +72,20 @@ export const useAppStore = create<AppState>((set) => ({
   setReminderMinutesBefore: (mins) => set({ reminderMinutesBefore: mins }),
   postSalahPromptEnabled: true,
   setPostSalahPromptEnabled: (val) => set({ postSalahPromptEnabled: val }),
+
+  // Prayer calculation
+  calculationMethod: 'MuslimWorldLeague',
+  setCalculationMethod: (method) => set({ calculationMethod: method }),
+  asrMadhab: 'Shafi',
+  setAsrMadhab: (madhab) => set({ asrMadhab: madhab }),
+
+  // DND
+  dndDuringSalah: false,
+  setDndDuringSalah: (val) => set({ dndDuringSalah: val }),
+
+  // Auth & Premium
+  userId: null,
+  setUserId: (id) => set({ userId: id }),
+  isPremium: true,
+  setIsPremium: (val) => set({ isPremium: val }),
 }));
