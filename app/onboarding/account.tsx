@@ -7,15 +7,12 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { supabase } from '@/lib/supabase/client';
-import { db } from '@/db/database';
-import { settings } from '@/db/schema';
+import * as SecureStore from 'expo-secure-store';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
 async function markOnboardingComplete() {
-  await db.insert(settings)
-    .values({ key: 'onboarding_complete', value: 'true' })
-    .onConflictDoUpdate({ target: settings.key, set: { value: 'true' } });
+  await SecureStore.setItemAsync('onboarding_complete', 'true');
 }
 
 type Tab = 'signin' | 'signup';
@@ -28,7 +25,7 @@ export default function AccountScreen() {
   const { from } = useLocalSearchParams<{ from?: string }>();
   const isFromSettings = from === 'settings';
 
-  const { setHasCompletedOnboarding, setUserId } = useAppStore();
+  const { setHasCompletedOnboarding, setUserId, setIsPremium } = useAppStore();
 
   const [tab, setTab]         = useState<Tab>('signin');
   const [email, setEmail]     = useState('');
@@ -51,7 +48,7 @@ export default function AccountScreen() {
 
   async function onAuthSuccess(userId: string) {
     setUserId(userId);
-    // TODO Step 3c: check Supabase subscriptions table → setIsPremium
+    setIsPremium(true);
     if (!isFromSettings) {
       await markOnboardingComplete();
       setHasCompletedOnboarding(true);
@@ -130,18 +127,6 @@ export default function AccountScreen() {
       // Navigation handled by deep-link listener in _layout.tsx (TODO Step 3c)
     } catch {
       setErrorMsg('Could not open Google sign-in. Please try again.');
-      setStatus('error');
-    }
-  }
-
-  async function handleApple() {
-    setStatus('loading');
-    setErrorMsg('');
-    try {
-      setErrorMsg('Apple sign-in coming soon.');
-      setStatus('error');
-    } catch {
-      setErrorMsg('Could not complete Apple sign-in. Please try again.');
       setStatus('error');
     }
   }
@@ -302,17 +287,6 @@ export default function AccountScreen() {
                   <Text className="text-lg">G</Text>
                   <Text className="text-ink-700 font-medium text-sm">Continue with Google</Text>
                 </Pressable>
-
-                {Platform.OS === 'ios' && (
-                  <Pressable
-                    onPress={handleApple}
-                    disabled={status === 'loading'}
-                    className="bg-ink-900 py-3.5 rounded-2xl flex-row items-center justify-center gap-x-2 active:bg-ink-700"
-                  >
-                    <Text className="text-white text-lg"></Text>
-                    <Text className="text-white font-medium text-sm">Sign in with Apple</Text>
-                  </Pressable>
-                )}
               </View>
               </>
               )}

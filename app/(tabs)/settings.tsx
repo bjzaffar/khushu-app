@@ -1,8 +1,9 @@
-import { View, Text, Switch, Pressable, ScrollView, ActivityIndicator, Platform, Alert } from 'react-native';
+import { View, Text, Switch, Pressable, ScrollView, ActivityIndicator, Platform, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { eq } from 'drizzle-orm';
+import { salahLogs } from '@/db/schema';
 import * as Location from 'expo-location';
 import { useAppStore } from '@/store/appStore';
 import { router } from 'expo-router';
@@ -70,6 +71,23 @@ export default function SettingsScreen() {
   const [autoDetectedLabel, setAutoDetectedLabel] = useState<string>('');
   const [locationStatus, setLocationStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
   const [methodDropdownOpen, setMethodDropdownOpen] = useState(false);
+  const [showSignOutModal, setShowSignOutModal] = useState(false);
+  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+  const [showClearLogsModal, setShowClearLogsModal] = useState(false);
+
+  // Debug entry: 5 taps on version text within 3 seconds
+  const debugTapCount = useRef(0);
+  const debugTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function handleDebugTap() {
+    debugTapCount.current += 1;
+    if (debugTapTimer.current) clearTimeout(debugTapTimer.current);
+    debugTapTimer.current = setTimeout(() => { debugTapCount.current = 0; }, 3000);
+    if (debugTapCount.current >= 5) {
+      debugTapCount.current = 0;
+      router.push('/debug');
+    }
+  }
 
   // Rehydrate from DB each time tab is focused
   useFocusEffect(
@@ -182,35 +200,40 @@ export default function SettingsScreen() {
     }
   }
 
-  async function handleSignOut() {
+  function handleSignOut() {
+    setShowSignOutModal(true);
+  }
+
+  function handleDeleteAccount() {
+    setShowDeleteAccountModal(true);
+  }
+
+  async function confirmSignOut() {
+    setShowSignOutModal(false);
     await supabase.auth.signOut();
     setUserId(null);
     setIsPremium(false);
   }
 
-  function handleDeleteAccount() {
-    Alert.alert(
-      'Delete account',
-      'This will permanently delete your account. Your locally stored logs will remain on this device, but your account and any cloud data will be gone forever.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete forever',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              // Calls a Supabase DB function that deletes auth.users for the current user
-              await supabase.rpc('delete_user');
-              await supabase.auth.signOut();
-              setUserId(null);
-              setIsPremium(false);
-            } catch {
-              Alert.alert('Error', 'Could not delete account. Please try again or contact support.');
-            }
-          },
-        },
-      ]
-    );
+  async function confirmDeleteAccount() {
+    setShowDeleteAccountModal(false);
+    try {
+      await supabase.rpc('delete_user');
+      await supabase.auth.signOut();
+      setUserId(null);
+      setIsPremium(false);
+    } catch {
+      // silent — user will see auth state change
+    }
+  }
+
+  function handleClearLogs() {
+    setShowClearLogsModal(true);
+  }
+
+  function confirmClearLogs() {
+    setShowClearLogsModal(false);
+    db.delete(salahLogs).run();
   }
 
   return (
@@ -474,6 +497,12 @@ export default function SettingsScreen() {
                   <Text className="text-sage-600 text-sm font-medium">→</Text>
                 </Pressable>
                 <Pressable
+                  onPress={handleClearLogs}
+                  className="px-5 py-4 flex-row justify-between items-center border-b border-sand-100 active:bg-sand-100"
+                >
+                  <Text className="text-red-400 font-medium text-sm">Clear all log history</Text>
+                </Pressable>
+                <Pressable
                   onPress={handleSignOut}
                   className="px-5 py-4 flex-row justify-between items-center border-b border-sand-100 active:bg-sand-100"
                 >
@@ -501,6 +530,12 @@ export default function SettingsScreen() {
                   <Text className="text-sage-600 text-sm font-medium">Upgrade →</Text>
                 </Pressable>
                 <Pressable
+                  onPress={handleClearLogs}
+                  className="px-5 py-4 flex-row justify-between items-center border-b border-sand-100 active:bg-sand-100"
+                >
+                  <Text className="text-red-400 font-medium text-sm">Clear all log history</Text>
+                </Pressable>
+                <Pressable
                   onPress={handleSignOut}
                   className="px-5 py-4 flex-row justify-between items-center border-b border-sand-100 active:bg-sand-100"
                 >
@@ -517,7 +552,97 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        {/* ── Version (hidden debug entry) ────────────────────────────────── */}
+        <Pressable onPress={handleDebugTap} className="items-center py-4">
+          <Text className="text-ink-300 text-xs">Khushu AI v1.0.0</Text>
+        </Pressable>
+
       </ScrollView>
+
+      {/* ── Sign Out Confirmation Modal ────────────────────────────────── */}
+      <Modal visible={showSignOutModal} transparent animationType="fade">
+        <Pressable className="flex-1 bg-black/30 items-center justify-center px-8" onPress={() => setShowSignOutModal(false)}>
+          <Pressable className="bg-white rounded-2xl p-6 w-full max-w-sm" onPress={(e) => e.stopPropagation()}>
+            <Text className="text-ink-900 text-base font-semibold text-center mb-2">
+              Sign out?
+            </Text>
+            <Text className="text-ink-400 text-sm text-center mb-6">
+              Are you sure you want to sign out?
+            </Text>
+            <View className="flex-row gap-x-3">
+              <Pressable
+                onPress={() => setShowSignOutModal(false)}
+                className="flex-1 py-3 rounded-2xl bg-sand-200 items-center"
+              >
+                <Text className="text-ink-700 font-medium">Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={confirmSignOut}
+                className="flex-1 py-3 rounded-2xl bg-red-500 items-center"
+              >
+                <Text className="text-white font-medium">Sign out</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* ── Delete Account Confirmation Modal ──────────────────────────── */}
+      <Modal visible={showDeleteAccountModal} transparent animationType="fade">
+        <Pressable className="flex-1 bg-black/30 items-center justify-center px-8" onPress={() => setShowDeleteAccountModal(false)}>
+          <Pressable className="bg-white rounded-2xl p-6 w-full max-w-sm" onPress={(e) => e.stopPropagation()}>
+            <Text className="text-ink-900 text-base font-semibold text-center mb-2">
+              Delete account?
+            </Text>
+            <Text className="text-ink-400 text-sm text-center mb-6">
+              This will permanently delete your account. Your locally stored logs will remain on this device, but your account and any cloud data will be gone forever.
+            </Text>
+            <View className="flex-row gap-x-3">
+              <Pressable
+                onPress={() => setShowDeleteAccountModal(false)}
+                className="flex-1 py-3 rounded-2xl bg-sand-200 items-center"
+              >
+                <Text className="text-ink-700 font-medium">Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={confirmDeleteAccount}
+                className="flex-1 py-3 rounded-2xl bg-red-500 items-center"
+              >
+                <Text className="text-white font-medium">Delete</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* ── Clear Logs Confirmation Modal ──────────────────────────────── */}
+      <Modal visible={showClearLogsModal} transparent animationType="fade">
+        <Pressable className="flex-1 bg-black/30 items-center justify-center px-8" onPress={() => setShowClearLogsModal(false)}>
+          <Pressable className="bg-white rounded-2xl p-6 w-full max-w-sm" onPress={(e) => e.stopPropagation()}>
+            <Text className="text-ink-900 text-base font-semibold text-center mb-2">
+              Clear all log history?
+            </Text>
+            <Text className="text-ink-400 text-sm text-center mb-6">
+              This will permanently delete all your logged salah reflections. This cannot be undone.
+            </Text>
+            <View className="flex-row gap-x-3">
+              <Pressable
+                onPress={() => setShowClearLogsModal(false)}
+                className="flex-1 py-3 rounded-2xl bg-sand-200 items-center"
+              >
+                <Text className="text-ink-700 font-medium">Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={confirmClearLogs}
+                className="flex-1 py-3 rounded-2xl bg-red-500 items-center"
+              >
+                <Text className="text-white font-medium">Clear</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
     </SafeAreaView>
   );
 }

@@ -104,7 +104,7 @@ serve(async (req) => {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-3-5-haiku-20241022",
+        model: "claude-haiku-4-5",
         max_tokens: 60,
         temperature: 0.7,
         messages: [
@@ -134,6 +134,14 @@ Return ONLY the reminder text, no quotes or formatting.`,
     });
 
     const data = await response.json();
+
+    if (data.error) {
+      return new Response(JSON.stringify({ reminder: null, debug: data.error }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const reminder = (data.content?.[0]?.text ?? "").trim();
 
     if (!reminder) {

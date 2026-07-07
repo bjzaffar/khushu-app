@@ -11,6 +11,7 @@ import { eq } from 'drizzle-orm';
 import { useAppStore } from '@/store/appStore';
 import { initDatabase, db } from '@/db/database';
 import { settings } from '@/db/schema';
+import * as SecureStore from 'expo-secure-store';
 import { calculatePrayerTimes } from '@/lib/prayer/prayerTimes';
 import {
   setupNotificationChannel,
@@ -25,6 +26,7 @@ import { count, gte, max } from 'drizzle-orm';
 import type { SalahName, CalculationMethodKey, AsrMadhab } from '@/types';
 import { supabase } from '@/lib/supabase/client';
 import { syncLogsFromCloud } from '@/lib/supabase/sync';
+import { refreshWidgetIfWeekChanged } from '@/lib/widget/widgetData';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -55,9 +57,9 @@ export default function RootLayout() {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) setUserId(session.user.id);
 
-        // Rehydrate onboarding flag
-        const onboardingRow = db.select().from(settings).where(eq(settings.key, 'onboarding_complete')).get();
-        if (onboardingRow?.value === 'true') setHasCompletedOnboarding(true);
+        // Rehydrate onboarding flag (uses SecureStore for reliable persistence in Expo Go)
+        const onboardingVal = await SecureStore.getItemAsync('onboarding_complete');
+        if (onboardingVal === 'true') setHasCompletedOnboarding(true);
 
         // Rehydrate notification settings
         const minutesRow = db.select().from(settings).where(eq(settings.key, 'reminder_minutes_before')).get();
@@ -109,6 +111,11 @@ export default function RootLayout() {
         const weekAgoStr = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
         const weekCountRow = db.select({ n: count() }).from(salahLogs).where(gte(salahLogs.logDate, weekAgoStr)).get();
         await scheduleWeeklySummaryNotification(weekCountRow?.n ?? 0);
+
+        // Refresh widget data if the week has rolled over (Monday 00:00+)
+        refreshWidgetIfWeekChanged().catch((err) =>
+          console.warn('[widget] refreshWidgetIfWeekChanged failed:', err)
+        );
 
         setDbReady(true);
       } catch (e: unknown) {
@@ -174,6 +181,7 @@ export default function RootLayout() {
         )}
         <Stack.Screen name="salah-mode" options={{ presentation: 'fullScreenModal' }} />
         <Stack.Screen name="paywall" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="debug" options={{ presentation: 'modal' }} />
         <Stack.Screen name="+not-found" />
       </Stack>
     </GestureHandlerRootView>

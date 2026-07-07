@@ -85,7 +85,7 @@ serve(async (req) => {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-3-5-haiku-20241022",
+        model: "claude-haiku-4-5",
         max_tokens: 10,
         temperature: 0,
         messages: [
@@ -112,7 +112,15 @@ Return ONLY the category key as a single word. If the text does not clearly fit 
     });
 
     const data = await response.json();
-    const raw = (data.content?.[0]?.text ?? "").trim().toLowerCase();
+
+    if (data.error) {
+      return new Response(JSON.stringify({ category: null, debug: data.error }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const raw = (data.content?.[0]?.text ?? "").trim().toLowerCase().replace(/^["']|["']$/g, "");
     const validKeys = [
       "work",
       "financial",

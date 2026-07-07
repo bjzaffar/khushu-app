@@ -156,7 +156,8 @@ function buildChartPoints(
 function computeSalahInsights(
   allRows: { salahName: string; focusRating: number; distractions: string; loggedAt: number }[],
   customLabelMap: Record<string, string>,
-  deletedLabelMap: Record<string, string>
+  deletedLabelMap: Record<string, string>,
+  historicalLabelMap: Record<string, string>
 ): SalahInsight[] {
   // Group rows by salah — rows are already in chronological order (asc loggedAt)
   const groups: Partial<Record<SalahName, typeof allRows>> = {};
@@ -189,7 +190,7 @@ function computeSalahInsights(
     }
     const topDistraction = topKey
       ? {
-          label: DISTRACTION_LABELS[topKey as DistractionKey] ?? customLabelMap[topKey] ?? deletedLabelMap[topKey] ?? 'Deleted distraction',
+          label: DISTRACTION_LABELS[topKey as DistractionKey] ?? customLabelMap[topKey] ?? deletedLabelMap[topKey] ?? historicalLabelMap[topKey] ?? 'Deleted distraction',
           pct: dTotal > 0 ? Math.round((topCount / dTotal) * 100) : 0,
         }
       : null;
@@ -576,10 +577,8 @@ export default function InsightsScreen() {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
       .toISOString()
       .split('T')[0];
-    // Free: 7-day window; premium: 30-day window for averages
-    const avgWindowDaysAgo = isPremium
-      ? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-      : sevenDaysAgo;
+    // Always use 7-day window for averages
+    const avgWindowDaysAgo = sevenDaysAgo;
     // Free: only count logs in last 7 days; premium: all logs for total count
     const totalRow = isPremium
       ? db.select({ n: count() }).from(salahLogs).get()
@@ -656,16 +655,29 @@ export default function InsightsScreen() {
       } catch {}
     }
 
+    const historicalLabelMap: Record<string, string> = {};
+    const historicalRow = db
+      .select()
+      .from(settings)
+      .where(eq(settings.key, 'historical_custom_labels'))
+      .get();
+    if (historicalRow) {
+      try {
+        const list = JSON.parse(historicalRow.value) as { key: string; label: string }[];
+        for (const d of list) historicalLabelMap[d.key] = d.label;
+      } catch {}
+    }
+
     const topDistractions = (Object.entries(dCounts) as [string, number][])
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3)
       .map(([key, n]) => ({
         key,
-        label: DISTRACTION_LABELS[key as DistractionKey] ?? customLabelMap[key] ?? deletedLabelMap[key] ?? 'Deleted distraction',
+        label: DISTRACTION_LABELS[key as DistractionKey] ?? customLabelMap[key] ?? deletedLabelMap[key] ?? historicalLabelMap[key] ?? 'Deleted distraction',
         pct: dTotal > 0 ? Math.round((n / dTotal) * 100) : 0,
       }));
 
-    const salahInsights = computeSalahInsights(allRows, customLabelMap, deletedLabelMap);
+    const salahInsights = computeSalahInsights(allRows, customLabelMap, deletedLabelMap, historicalLabelMap);
 
     // Reminder effectiveness — all-time, all users (data collected regardless of tier)
     const effectRows = db
@@ -777,7 +789,7 @@ export default function InsightsScreen() {
             {/* ── Focus by Salah ─────────────────────────────────────────────── */}
             <View className="mb-6">
               <Text className="text-xs font-medium text-ink-300 uppercase tracking-widest mb-3">
-                Focus by Salah
+                Focus by Salah in the last week
               </Text>
               <View className="bg-white rounded-2xl border border-sand-200 overflow-hidden">
                 {SALAH_NAMES.map((name, i) => {

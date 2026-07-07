@@ -27,6 +27,7 @@ import {
 import { getCurrentSalahWindow } from '@/lib/prayer/prayerTimes';
 import { cancelPostSalahForSalah, cancelReEngagementNotification } from '@/lib/notifications/notificationService';
 import { classifyDistraction, generateAIReminder } from '@/lib/notifications/reminderContent';
+import { writeWidgetData } from '@/lib/widget/widgetData';
 
 // Built-in keys excluding 'other' (rendered separately)
 const BUILTIN_DISTRACTION_KEYS = Object.keys(DISTRACTION_LABELS).filter(
@@ -63,6 +64,17 @@ export default function LogScreen() {
     if (params.salah && SALAH_NAMES.includes(params.salah as SalahName)) {
       return params.salah as SalahName;
     }
+    // Auto-select first unlogged salah of the day
+    const today = new Date().toISOString().split('T')[0];
+    const logs = db
+      .select()
+      .from(salahLogs)
+      .where(eq(salahLogs.logDate, today))
+      .all();
+    const loggedSet = new Set(logs.map((l) => l.salahName));
+    const firstUnlogged = SALAH_NAMES.find((name) => !loggedSet.has(name));
+    if (firstUnlogged) return firstUnlogged;
+    // All logged — fall back to current window or first salah
     if (todaysPrayerTimes) {
       return getCurrentSalahWindow(todaysPrayerTimes) ?? 'fajr';
     }
@@ -75,6 +87,7 @@ export default function LogScreen() {
   const [saved, setSaved] = useState(false);
   const [savedSalahName, setSavedSalahName] = useState<SalahName>('fajr');
   const [relogSalah, setRelogSalah] = useState<SalahName | null>(null);
+  const [deleteArchived, setDeleteArchived] = useState<{ key: string; label: string } | null>(null);
   const [todaysLogs, setTodaysLogs] = useState<Record<string, number>>({});
 
   // Custom distraction state
@@ -83,8 +96,6 @@ export default function LogScreen() {
   const [editMode, setEditMode] = useState(false);
   const [showOtherInput, setShowOtherInput] = useState(false);
   const [otherInputText, setOtherInputText] = useState('');
-  const [renamingKey, setRenamingKey] = useState<string | null>(null);
-  const [renameText, setRenameText] = useState('');
   const starsContainerRef = useRef<View>(null);
   const starsContainerXRef = useRef(0);
   const starsContainerWidthRef = useRef(0);
@@ -107,12 +118,10 @@ export default function LogScreen() {
       setSaved(false);
       setShowOtherInput(false);
       setOtherInputText('');
+      setFocusRating(0);
+      setSelectedDistractions([]);
       if (params.salah && SALAH_NAMES.includes(params.salah as SalahName)) {
         setSelectedSalah(params.salah as SalahName);
-      }
-      if (params.fromSalahMode === '1' && params.salah) {
-        setFocusRating(0);
-        setSelectedDistractions([]);
       }
       // Load today's logs to detect already-logged prayers
       const today = new Date().toISOString().split('T')[0];
@@ -126,6 +135,15 @@ export default function LogScreen() {
         map[log.salahName] = log.focusRating;
       }
       setTodaysLogs(map);
+
+      // Auto-select first unlogged salah when no specific salah param
+      if (!params.salah || !SALAH_NAMES.includes(params.salah as SalahName)) {
+        const loggedSet = new Set(logs.map((l) => l.salahName));
+        const firstUnlogged = SALAH_NAMES.find((name) => !loggedSet.has(name));
+        if (firstUnlogged) {
+          setSelectedSalah(firstUnlogged);
+        }
+      }
     }, [params.fromSalahMode, params.salah])
   );
 
@@ -168,19 +186,6 @@ export default function LogScreen() {
     }
   }
 
-  function handleRenameConfirm() {
-    if (!renamingKey) return;
-    const label = renameText.trim();
-    if (label) {
-      const newList = customDistractions.map((d) =>
-        d.key === renamingKey ? { ...d, label } : d
-      );
-      setCustomDistractions(newList);
-      saveSettingJSON('custom_distractions', newList);
-    }
-    setRenamingKey(null);
-  }
-
   function handleRestoreDefaults() {
     setHiddenBuiltins([]);
     saveSettingJSON('hidden_distractions', []);
@@ -197,6 +202,19 @@ export default function LogScreen() {
 
     const newArchive = archive.filter((d) => d.key !== key);
     saveSettingJSON('deleted_custom_distractions', newArchive);
+  }
+
+  function handlePermanentDelete(key: string) {
+    const archive = getSettingJSON('deleted_custom_distractions') as { key: string; label: string }[];
+    const found = archive.find((d) => d.key === key);
+    const newArchive = archive.filter((d) => d.key !== key);
+    saveSettingJSON('deleted_custom_distractions', newArchive);
+
+    if (found) {
+      const historical = getSettingJSON('historical_custom_labels') as { key: string; label: string }[];
+      historical.push({ key: found.key, label: found.label });
+      saveSettingJSON('historical_custom_labels', historical);
+    }
   }
 
   async function handleSave() {
@@ -270,6 +288,11 @@ export default function LogScreen() {
         if (error) console.warn('[sync] salah_logs insert failed:', error.message);
       });
     }
+
+    // Fire-and-forget widget data update
+    writeWidgetData().catch((err) =>
+      console.warn('[widget] writeWidgetData failed:', err)
+    );
 
     await cancelPostSalahForSalah(selectedSalah);
     await cancelReEngagementNotification();
@@ -429,7 +452,6 @@ export default function LogScreen() {
                 <Pressable
                   onPress={() => {
                     setEditMode((v) => !v);
-                    setRenamingKey(null);
                     setShowOtherInput(false);
                   }}
                 >
@@ -478,29 +500,9 @@ export default function LogScreen() {
               {customDistractions.map(({ key, label }) => {
                 const active = !editMode && selectedDistractions.includes(key);
                 if (editMode) {
-                  if (renamingKey === key) {
-                    return (
-                      <View
-                        key={key}
-                        className="py-2 px-3 rounded-xl bg-white border border-sage-600 flex-row items-center"
-                      >
-                        <TextInput
-                          value={renameText}
-                          onChangeText={setRenameText}
-                          onSubmitEditing={handleRenameConfirm}
-                          onBlur={handleRenameConfirm}
-                          autoFocus
-                          className="text-sm font-medium text-ink-700"
-                          style={{ minWidth: 60 }}
-                        />
-                      </View>
-                    );
-                  }
                   return (
                     <View key={key} className="py-2 px-3 rounded-xl bg-sand-200 flex-row items-center">
-                      <Pressable onPress={() => { setRenamingKey(key); setRenameText(label); }}>
-                        <Text className="text-ink-700 text-sm font-medium">{label}</Text>
-                      </Pressable>
+                      <Text className="text-ink-700 text-sm font-medium">{label}</Text>
                       <Pressable onPress={() => handleDeleteCustom(key)} hitSlop={8} className="ml-1.5">
                         <Text className="text-red-400 text-xs">✕</Text>
                       </Pressable>
@@ -531,23 +533,31 @@ export default function LogScreen() {
               )}
             </View>
 
-            {/* Deleted custom distractions — tap to reactivate */}
+            {/* Archived custom distractions — tap to reactivate or permanently delete */}
             {editMode && (() => {
               const archive = getSettingJSON('deleted_custom_distractions') as { key: string; label: string }[];
               if (archive.length === 0) return null;
               return (
                 <View className="mt-3">
-                  <Text className="text-xs text-ink-300 mb-2">Deleted — tap to reactivate:</Text>
+                  <Text className="text-xs text-ink-300 mb-2">Archived — tap to reactivate:</Text>
                   <View className="flex-row flex-wrap gap-2">
                     {archive.map(({ key, label }) => (
-                      <Pressable
+                      <View
                         key={key}
-                        onPress={() => handleReactivate(key)}
                         className="py-2 px-3 rounded-xl bg-sand-100 border border-dashed border-sand-300 flex-row items-center"
                       >
-                        <Text className="text-ink-400 text-sm">{label}</Text>
-                        <Text className="text-sage-600 text-xs ml-1.5">↻</Text>
-                      </Pressable>
+                        <Pressable onPress={() => handleReactivate(key)} className="flex-row items-center">
+                          <Text className="text-ink-400 text-sm">{label}</Text>
+                          <Text className="text-sage-600 text-xs ml-1.5">↻</Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => setDeleteArchived({ key, label })}
+                          hitSlop={8}
+                          className="ml-1"
+                        >
+                          <Text className="text-red-400 text-xs">✕</Text>
+                        </Pressable>
+                      </View>
                     ))}
                   </View>
                 </View>
@@ -651,6 +661,38 @@ export default function LogScreen() {
                 className="flex-1 py-3 rounded-2xl bg-sage-600 items-center"
               >
                 <Text className="text-white font-medium">Yes</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* ── Permanent Delete Confirmation Modal ───────────────────────── */}
+      <Modal visible={deleteArchived !== null} transparent animationType="fade">
+        <Pressable className="flex-1 bg-black/30 items-center justify-center px-8" onPress={() => setDeleteArchived(null)}>
+          <Pressable className="bg-white rounded-2xl p-6 w-full max-w-sm" onPress={(e) => e.stopPropagation()}>
+            <Text className="text-ink-900 text-base font-semibold text-center mb-2">
+              Delete Distraction?
+            </Text>
+            <Text className="text-ink-400 text-sm text-center mb-6">
+              {deleteArchived ? `"${deleteArchived.label}" will be permanently deleted.` : ''}
+              {'\n'}It won't be available when logging new reflections.
+            </Text>
+            <View className="flex-row gap-x-3">
+              <Pressable
+                onPress={() => setDeleteArchived(null)}
+                className="flex-1 py-3 rounded-2xl bg-sand-200 items-center"
+              >
+                <Text className="text-ink-700 font-medium">Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  if (deleteArchived) handlePermanentDelete(deleteArchived.key);
+                  setDeleteArchived(null);
+                }}
+                className="flex-1 py-3 rounded-2xl bg-red-500 items-center"
+              >
+                <Text className="text-white font-medium">Delete</Text>
               </Pressable>
             </View>
           </Pressable>

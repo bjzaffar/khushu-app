@@ -14,7 +14,8 @@ function cacheKey(customKey: string): string {
 }
 
 export function getCachedReminder(customKey: string): string | null {
-  const raw = SecureStore.getItem(cacheKey(customKey));
+  const key = cacheKey(customKey);
+  const raw = SecureStore.getItem(key);
   if (!raw) return null;
   try {
     const cached: CachedReminder = JSON.parse(raw);
@@ -39,9 +40,13 @@ function pick<T>(arr: T[]): T {
 export async function classifyDistraction(
   text: string
 ): Promise<DistractionKey | null> {
+  console.log(`[classify] Called with text="${text}"`);
   try {
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) return null;
+    if (!session?.access_token) {
+      console.log(`[classify] No session — returning null`);
+      return null;
+    }
 
     const res = await fetch(
       `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/classify-distraction`,
@@ -55,10 +60,15 @@ export async function classifyDistraction(
         body: JSON.stringify({ text }),
       }
     );
+    const body = await res.json();
+    console.log(`[classify] status=${res.status} body=${JSON.stringify(body)}`);
     if (!res.ok) return null;
-    const { category } = await res.json();
+    const { category } = body;
     return (category as DistractionKey | null) ?? null;
-  } catch { return null; }
+  } catch (e) {
+    console.log(`[classify] error: ${e instanceof Error ? e.message : String(e)}`);
+    return null;
+  }
 }
 
 // ── AI reminder generation (fire-and-forget at log time) ───────────────────
@@ -69,12 +79,16 @@ export async function generateAIReminder(
   closestCategory: DistractionKey | null,
   prayerName: SalahName
 ): Promise<string | null> {
+  console.log(`[generate] Called text="${text}" category=${closestCategory} prayer=${prayerName}`);
   const cached = getCachedReminder(customKey);
   if (cached) return cached;
 
   try {
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) return null;
+    if (!session?.access_token) {
+      console.log(`[generate] No session — returning null`);
+      return null;
+    }
 
     const allDistractions = templates.distractions as Record<
       string,
@@ -114,8 +128,10 @@ export async function generateAIReminder(
         }),
       }
     );
+    const body = await res.json();
+    console.log(`[generate] status=${res.status} body=${JSON.stringify(body).substring(0, 200)}`);
     if (!res.ok) return null;
-    const { reminder } = await res.json();
+    const { reminder } = body;
     if (typeof reminder === 'string' && reminder.length > 0) {
       setCachedReminder(customKey, reminder);
       return reminder;

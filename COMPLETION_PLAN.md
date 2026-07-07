@@ -8,7 +8,7 @@
 
 The app is **feature-complete for core free-tier functionality**. All 8 screens, local database, prayer calculation, pattern engine, notification system, insights dashboard, and cloud sync are implemented and working.
 
-**What's missing:** AI-powered premium reminders, home screen widget, Apple Sign-In, monetization (IAP), testing, and production build configuration.
+**What's missing:** AI-powered premium reminders, home screen widget, monetization (IAP), testing, and production build configuration.
 
 ---
 
@@ -869,22 +869,55 @@ Classification and generation Edge Functions are unaffected — they operate on 
 
 ### Goal
 
-A native home screen widget displaying a 7-day prayer heatmap: 7 columns (today + 6 previous days) × 5 rows (Fajr → Isha). Each cell is a rounded square — grey for unlogged prayers, jade green with saturation mapped to focus rating (1 = 20% opacity, 5 = 100%) for logged prayers.
+A native home screen widget displaying a weekly prayer heatmap: 7 columns (Monday → Sunday of the current week) × 5 rows (Fajr → Isha). Each cell is a rounded square — grey for unlogged prayers, jade green with saturation mapped to focus rating (1 = 20% opacity, 5 = 100%) for logged prayers. Friday Dhuhr cell gets a gold underline to denote Jumu'ah.
 
 ### Design
 
 ```
-        Mon  Tue  Wed  Thu  Fri  Sat  Sun
-Fajr    [■]  [■]  [■]  [■]  [■]  [■]  [■]
-Dhuhr   [■]  [■]  [■]  [■]  [■]  [■]  [■]
-Asr     [■]  [■]  [■]  [■]  [■]  [■]  [■]
-Maghrib [■]  [■]  [■]  [■]  [■]  [■]  [■]
-Isha    [■]  [■]  [■]  [■]  [■]  [■]  [■]
+      M    T    W    T    F    S    S
+Fajr  [■]  [■]  [■]  [■]  [■]  [■]  [■]
+Dhuhr [■]  [■]  [■]  [■]  [■̲]  [■]  [■]
+Asr   [■]  [■]  [■]  [■]  [■]  [■]  [■]
+Mghrb [■]  [■]  [■]  [■]  [■]  [■]  [■]
+Isha  [■]  [■]  [■]  [■]  [■]  [■]  [■]
 ```
 
-- Cell size: ~32×32px, 4px gap, rounded corners
-- Grey: `#EFE8D8` (unlogged)
-- Green: `#5A7A5A` at 20%–100% opacity (logged, rating 1–5)
+**Widget container**
+- Size: 637×259pt (iOS medium widget / Android 4×2)
+- Background: white (`#FFFFFF`)
+- Border radius: 20pt
+- No shadow, no border — flat white card
+
+**Typography**
+- Font: Inter Semi-Bold, 20pt — used for both row labels and column headers
+- Color: dark charcoal (`#1A1917`)
+- Row labels: left-aligned, vertically centered with each row
+- Column headers: centered above each cell column
+
+**Grid layout**
+- Cell size: 20×20pt, 4pt border-radius
+- Horizontal gap between cells: ~55pt (distributes evenly across remaining width after row labels)
+- Vertical gap between cells: 18pt
+- Row labels column: fixed width on left, grid fills remaining width
+- Grid is left-aligned with padding (not centered in widget)
+
+**Cell colors**
+- Unlogged: `#C5B9A8` (warm taupe)
+- Logged — green scale by focus rating:
+  - Rating 1: `#E5EDE5`
+  - Rating 2: `#C0D8C0`
+  - Rating 3: `#9BC29B`
+  - Rating 4: `#75AC75`
+  - Rating 5: `#5A7A5A`
+
+**Jumu'ah indicator**
+- Friday Dhuhr cell: gold underline (`#C9A84C`)
+- Underline width: 20pt (= cell width)
+- Underline height: 3pt
+- Positioned directly below the cell
+
+**Data rules**
+- Columns always represent Monday–Sunday of the current week (not a rolling 7-day window)
 
 ### Data sharing
 
@@ -895,104 +928,73 @@ Native widgets cannot read the app's SQLite database directly. A shared data lay
 | **iOS** | App Group shared container — app writes a JSON summary after each log, widget extension reads it |
 | **Android** | ContentProvider or shared SharedPreferences with world-readable mode |
 
-**Shared format**: JSON array of 35 entries `{ day: string, salah: string, rating: number | null }` representing 7 days × 5 prayers.
+**Shared format**: JSON array of 35 entries `{ day: string, salah: string, rating: number | null }` representing 7 days (Mon–Sun of current week) × 5 prayers.
 
 ### Steps
 
-1. **Shared data writer (`lib/widget/widgetData.ts`)**
-   - Build heatmap JSON from last 7 days of `salahLogs`
-   - Write to platform-specific shared storage (App Group on iOS, ContentProvider on Android)
+1. **Shared data writer (`lib/widget/widgetData.ts`)** ✅
+   - Build heatmap JSON for the current week (Monday 00:00 → Sunday 23:59)
+   - Query `salahLogs` for the date range of the current week
+   - Write to platform-specific shared storage (App Group on iOS, SharedPreferences on Android via native module)
    - Call after each `handleSave()` in `log.tsx`
 
-2. **iOS WidgetKit extension**
-   - Create WidgetKit extension target in Xcode (via `expo-widget` plugin or manual)
-   - `SalahHeatmapWidget` in SwiftUI using `TimelineProvider`
-   - Read JSON from App Group container
-   - Render grid using `LazyVGrid`
-   - Widget size: medium (~329×155pt) or large
+2. **iOS WidgetKit extension** ✅ (files created, Xcode config needed)
+   - `ios/SalahHeatmapWidget/` — SwiftUI widget with `TimelineProvider`
+   - Reads JSON from App Group container (`UserDefaults(suiteName: "group.com.khushuai.app")`)
+   - Renders grid using proportional layout via `GeometryReader`
+   - Widget size: medium (637×259pt)
+   - Container: white, 20pt corner radius, no shadow
+   - **Manual Xcode steps required:**
+     1. Open `.xcworkspace` in Xcode
+     2. File → New → Target → iOS → Widget Extension
+     3. Name: `SalahHeatmapWidget`, Bundle ID: `com.khushuai.app.widget`
+     4. Replace generated files with `ios/SalahHeatmapWidget/*.swift` + `Info.plist`
+     5. Add App Group capability: target → Signing & Capabilities → + App Group → `group.com.khushuai.app`
+     6. Enable App Group on main app target too
+     7. Set `USER_SCRIPT_SANITIZATION = NO` in build settings if needed
 
-3. **Android App Widget**
-   - Create `SalahHeatmapWidgetProvider` in Kotlin
-   - Define widget layout XML with `GridLayout` (7×5)
-   - Register in `AndroidManifest.xml` as `<receiver>`
-   - Read data from ContentProvider/SharedPreferences
-   - Update via `AppWidgetManager` after each log
+3. **Android App Widget** ✅
+   - `SalahHeatmapWidgetProvider.kt` — reads JSON from SharedPreferences, maps cells to drawable resources
+   - `widget_heatmap.xml` — LinearLayout grid with 35 `ImageView` cells, row labels, column headers
+   - Cell drawables: `cell_unlogged.xml`, `cell_rating_{1-5}.xml`, `cell_jumuah.xml`, `cell_jumuah_{1-5}.xml`
+   - Registered in `AndroidManifest.xml` as `<receiver>`
+   - `WidgetDataModule.kt` — React Native bridge that writes to SharedPreferences + refreshes widgets
+   - `WidgetDataPackage.kt` — registered in `MainApplication.kt`
 
-4. **Update trigger**
-   - After `handleSave()` in `app/(tabs)/log.tsx`, call the shared data writer
-   - Notify widget to refresh (`WidgetKit.reloadAllTimelines` on iOS, `AppWidgetManager.updateAppWidget` on Android)
+4. **Update trigger** ✅
+   - After `handleSave()` in `app/(tabs)/log.tsx`, calls `writeWidgetData()` (fire-and-forget)
+   - On app startup in `app/_layout.tsx`, calls `refreshWidgetIfWeekChanged()` (handles Monday rollover)
+   - Android: `WidgetDataModule.writeHeatmapData()` triggers `AppWidgetManager` refresh
+   - iOS: Timeline policy `.after(nextMonday)` auto-refreshes at week boundary
 
-### Files to create/modify
+### Files created/modified
 
-| File | Change |
-|---|---|
-| `lib/widget/widgetData.ts` | Shared heatmap JSON builder + platform write logic |
-| `app/(tabs)/log.tsx` | Call widget data update after save |
-| `ios/` (Xcode) | New WidgetKit extension target with SwiftUI views |
-| `android/app/src/main/kotlin/` | New widget provider + layout XML + manifest entry |
-| `app.json` | iOS config plugin for widget extension if using `expo-widget` |
-
----
-
-## Stage 3: Apple Sign-In
-
-**Priority:** Medium — required for iOS App Store
-**Effort:** Small
-**Depends on:** Apple Developer account
-
-### Goal
-
-Enable "Sign in with Apple" on iOS devices.
-
-### Code implementation
-
-Done — `expo-apple-authentication` installed, `handleApple()` implemented in `app/onboarding/account.tsx`, entitlements added to `app.json`.
-
-### Remaining manual steps
-
-1. **Enroll in Apple Developer Program**
-   - Go to [developer.apple.com/account](https://developer.apple.com/account)
-   - Click **Enroll today** and complete enrollment ($99/year)
-   - Wait for approval (usually instant, up to 48 hours)
-
-2. **Enable Sign in with Apple capability**
-   - Go to Certificates, Identifiers & Profiles → Identifiers
-   - Select app ID `com.khushuai.app`
-   - Under Capabilities, enable **Sign In with Apple**
-   - Click Configure → select "Enable as a primary App ID"
-   - Save
-
-3. **Create Apple Service ID**
-   - Go to Certificates, Identifiers & Profiles → Identifiers → click **+**
-   - Select **Services IDs** → Continue
-   - Name: "Khushu AI Supabase Auth", Identifier: `com.khushuai.supabase`
-   - Enable **Sign In with Apple** → Configure
-   - Add Supabase callback URL as Return URL: `https://<your-project-ref>.supabase.co/auth/v1/callback`
-   - Save
-
-4. **Create Apple Sign-In key**
-   - Go to Certificates, Identifiers & Profiles → Keys → click **+**
-   - Name: "Sign in with Apple Key"
-   - Enable **Sign In with Apple**
-   - Register the key → **download the `.p8` file** (only downloadable once)
-   - Note the **Key ID**
-
-5. **Configure Supabase**
-   - Go to Supabase dashboard → Authentication → Providers → Apple
-   - Enable Apple provider
-   - Enter Service ID, Team ID, Key ID, and paste/upload the private key
-   - Set Redirect URI to: `https://<your-project-ref>.supabase.co/auth/v1/callback`
-   - Save
-
-6. **Test on physical iOS device**
-   - Run `npx expo run:ios` on a physical device (not simulator)
-   - Tap **Sign in with Apple** on the account screen
-   - Complete the Apple ID flow
-   - Verify you're redirected into the app and the user is created in Supabase
+| File | Status | Change |
+|---|---|---|
+| `lib/widget/widgetData.ts` | ✅ | Heatmap JSON builder + platform write (AsyncStorage + native module bridge) |
+| `app/(tabs)/log.tsx` | ✅ | Calls `writeWidgetData()` after `handleSave()` |
+| `app/_layout.tsx` | ✅ | Calls `refreshWidgetIfWeekChanged()` on startup |
+| `app.json` | ✅ | Added `expo-widget` plugin config |
+| `ios/SalahHeatmapWidget/SalahHeatmapEntry.swift` | ✅ | Timeline entry + Codable types |
+| `ios/SalahHeatmapWidget/SalahHeatmapView.swift` | ✅ | SwiftUI view with proportional GeometryReader layout |
+| `ios/SalahHeatmapWidget/SalahHeatmapWidget.swift` | ✅ | Widget entry + TimelineProvider (reads App Group UserDefaults) |
+| `ios/SalahHeatmapWidget/Info.plist` | ✅ | Extension bundle config |
+| `android/.../widget/SalahHeatmapWidgetProvider.kt` | ✅ | AppWidgetProvider — reads SharedPreferences, maps cells to drawables |
+| `android/.../modules/WidgetDataModule.kt` | ✅ | React Native bridge — writes to SharedPreferences + refreshes widgets |
+| `android/.../modules/WidgetDataPackage.kt` | ✅ | ReactPackage registration |
+| `android/.../MainApplication.kt` | ✅ | Registered WidgetDataPackage |
+| `android/.../AndroidManifest.xml` | ✅ | Registered widget receiver |
+| `android/.../res/xml/salah_heatmap_widget_info.xml` | ✅ | Widget provider info (4×2 cells) |
+| `android/.../res/layout/widget_heatmap.xml` | ✅ | LinearLayout grid — 35 ImageView cells + labels |
+| `android/.../res/drawable/widget_background.xml` | ✅ | White rounded rectangle |
+| `android/.../res/drawable/cell_unlogged.xml` | ✅ | Taupe cell |
+| `android/.../res/drawable/cell_rating_{1-5}.xml` | ✅ | Green scale cells |
+| `android/.../res/drawable/cell_jumuah.xml` | ✅ | Taupe + gold underline |
+| `android/.../res/drawable/cell_jumuah_{1-5}.xml` | ✅ | Green + gold underline variants |
 
 ---
 
-## Stage 4: In-App Purchase Integration (RevenueCat)
+## Stage 3: In-App Purchase Integration (RevenueCat)
 
 **Priority:** High — gates all premium features
 **Effort:** Medium
@@ -1047,11 +1049,11 @@ Enable subscription-based monetization so premium features (AI reminders, full t
 
 ---
 
-## Stage 5: Testing
+## Stage 4: Testing
 
 **Priority:** High — required before production release
 **Effort:** Medium-Large
-**Depends on:** Stages 1-4 complete
+**Depends on:** Stages 1-3 complete
 
 ### Goal
 
@@ -1091,11 +1093,11 @@ Establish a test suite covering core logic, integration flows, and E2E user jour
 
 ---
 
-## Stage 6: Production Build & Store Submission
+## Stage 5: Production Build & Store Submission
 
 **Priority:** High — launch requirement
 **Effort:** Medium
-**Depends on:** Stages 1-5
+**Depends on:** Stages 1-4
 
 ### Goal
 
@@ -1136,7 +1138,7 @@ Build signed binaries, configure store listings, and submit to App Store + Googl
 
 ---
 
-## Stage 7: Post-Launch Enhancements (Optional)
+## Stage 6: Post-Launch Enhancements (Optional)
 
 Lower priority, can be tackled iteratively after launch.
 
@@ -1161,17 +1163,14 @@ Stage 1 (AI reminders)
 Stage 2 (Home screen widget)
     │
     ▼
-Stage 3 (Apple Sign-In)
+Stage 3 (RevenueCat IAP)
     │
     ▼
-Stage 4 (RevenueCat IAP)
+Stage 4 (Testing)
     │
     ▼
-Stage 5 (Testing)
+Stage 5 (Production build & submission)
     │
     ▼
-Stage 6 (Production build & submission)
-    │
-    ▼
-Stage 7 (Post-launch polish)
+Stage 6 (Post-launch polish)
 ```

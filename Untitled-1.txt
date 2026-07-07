@@ -1,2 +1,5 @@
-1. Github commit
-2. Supabase backup
+1. Onboarding shows everytime - fix that
+2. Design logo
+3. Edit distraction_templates.json thoroughly
+4. Buy apple developer subscription
+5. Finish widget

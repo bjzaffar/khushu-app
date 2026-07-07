@@ -71,5 +71,5 @@ export async function getPatternForSalah(salahName: SalahName, dayLimit?: number
     return { phase: 'established', topDistraction, frequency, logCount, totalLogs };
   }
 
-  return { phase: 'cold_start', topDistraction: null, frequency: 0, logCount, totalLogs };
+  return { phase: 'emerging', topDistraction, frequency, logCount, totalLogs };
 }
