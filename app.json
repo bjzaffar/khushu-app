@@ -4,11 +4,11 @@
     "slug": "khushu-ai",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/khushu-ai-icon.jpeg",
     "scheme": "khushuai",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/images/splash.png",
+      "image": "./assets/images/khushu-ai-icon.jpeg",
       "resizeMode": "contain",
       "backgroundColor": "#F9F5EE"
     },
@@ -21,7 +21,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "foregroundImage": "./assets/images/khushu-ai-icon.jpeg",
         "backgroundColor": "#F9F5EE"
       },
       "package": "com.khushuai.app",
@@ -38,7 +38,7 @@
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/khushu-ai-icon.jpeg"
     },
     "plugins": [
       "expo-router",
@@ -51,7 +51,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/images/notification-icon.png",
+          "icon": "./assets/images/khushu-ai-icon.jpeg",
           "color": "#6B8F6B",
           "sounds": []
         }

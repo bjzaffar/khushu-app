@@ -1,0 +1,14 @@
+1. ***DONE*** Onboarding no longer shows - fix that
+2. ***DONE*** Fix email links
+3. ***DONE*** Make it so logs are synced to supabase two-way
+4. ***DONE*** Location not found and completed logs on log page
+5. Change the "reminders that work best for you" insight, and make it actually change what types of reminders are usually given
+5. Security for custom distraction text box
+6. Edit distraction_templates.json thoroughly
+7. RevenueCat
+8. Buy apple developer subscription
+9. Finish widget
+10. Sort out emails
+11. Testing
+12. Upload to play store and app store
+13. Set up analytics

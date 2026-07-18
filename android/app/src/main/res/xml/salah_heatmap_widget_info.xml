@@ -1,13 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:initialLayout="@layout/widget_heatmap"
     android:minWidth="250dp"
     android:minHeight="110dp"
-    android:targetCellWidth="4"
-    android:targetCellHeight="2"
-    android:maxResizeWidth="320dp"
-    android:maxResizeHeight="160dp"
-    android:resizeMode="horizontal|vertical"
-    android:updatePeriodMillis="0"
-    android:initialLayout="@layout/widget_heatmap"
+    android:updatePeriodMillis="1800000"
     android:widgetCategory="home_screen"
-    android:previewLayout="@layout/widget_heatmap" />
+    android:resizeMode="none"
+    android:label="@string/widget_prayer_heatmap_label"
+    android:description="@string/widget_prayer_heatmap_description" />

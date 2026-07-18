@@ -2,6 +2,7 @@ import { View, Text, ScrollView, Modal, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useCallback, useState, useEffect, useRef } from 'react';
 import { useFocusEffect, router } from 'expo-router';
+import { useScrollToTop } from '@react-navigation/native';
 import { avg, count, gte, eq, and, asc, isNotNull } from 'drizzle-orm';
 import { useAppStore } from '@/store/appStore';
 import { db } from '@/db/database';
@@ -558,6 +559,9 @@ export default function InsightsScreen() {
   const filtersRef = useRef({ salahFilter, timeframe });
   filtersRef.current = { salahFilter, timeframe };
 
+  const scrollRef = useRef<ScrollView>(null);
+  useScrollToTop(scrollRef);
+
   function loadChartData(filter: SalahName | 'all', tf: '7' | '30' | '90' | 'all') {
     const rows =
       tf === 'all'
@@ -723,6 +727,7 @@ export default function InsightsScreen() {
   return (
     <SafeAreaView className="flex-1 bg-sand-100">
       <ScrollView
+        ref={scrollRef}
         className="flex-1"
         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 }}
       >

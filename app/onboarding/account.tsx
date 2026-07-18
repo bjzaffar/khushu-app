@@ -5,8 +5,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import { useAppStore } from '@/store/appStore';
 import { supabase } from '@/lib/supabase/client';
+import { syncLogsFromCloud } from '@/lib/supabase/sync';
 import * as SecureStore from 'expo-secure-store';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -16,7 +18,14 @@ async function markOnboardingComplete() {
 }
 
 type Tab = 'signin' | 'signup';
-type Status = 'idle' | 'loading' | 'error' | 'confirm_email';
+type Status = 'idle' | 'loading' | 'error' | 'confirm_email' | 'forgot_password' | 'link_sent';
+
+function isNetworkError(error: unknown): boolean {
+  const details = error instanceof Error
+    ? `${error.name} ${error.message} ${String((error as Error & { context?: unknown; cause?: unknown }).context)} ${String((error as Error & { cause?: unknown }).cause)}`
+    : String(error);
+  return /network request failed|failed to fetch|network error|offline|internet|functionsfetcherror|failed to send a request to the edge function/i.test(details);
+}
 
 // ─── component ────────────────────────────────────────────────────────────────
 
@@ -33,6 +42,9 @@ export default function AccountScreen() {
   const [status, setStatus]   = useState<Status>('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const [confirmEmail, setConfirmEmail] = useState('');
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   // ─── navigation ─────────────────────────────────────────────────────────────
 
@@ -49,6 +61,12 @@ export default function AccountScreen() {
   async function onAuthSuccess(userId: string) {
     setUserId(userId);
     setIsPremium(true);
+    // Make the authenticated user's SQLite cache match Supabase before they
+    // return to the app. Offline sessions retain their current local cache
+    // until the connectivity listener can complete this refresh.
+    await syncLogsFromCloud(userId).catch((error) =>
+      console.warn('[supabase] post-login log sync failed:', error)
+    );
     if (!isFromSettings) {
       await markOnboardingComplete();
       setHasCompletedOnboarding(true);
@@ -121,7 +139,7 @@ export default function AccountScreen() {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
-        options: { redirectTo: 'khushu://auth/callback' },
+        options: { redirectTo: 'khushuai://auth/callback' },
       });
       if (error) { setErrorMsg(error.message); setStatus('error'); }
       // Navigation handled by deep-link listener in _layout.tsx (TODO Step 3c)
@@ -129,6 +147,45 @@ export default function AccountScreen() {
       setErrorMsg('Could not open Google sign-in. Please try again.');
       setStatus('error');
     }
+  }
+
+  // ─── forgot password handlers ────────────────────────────────────────────────
+
+  async function handleSendResetLink() {
+    if (!forgotEmail.trim()) {
+      setErrorMsg('Please enter your email.');
+      return;
+    }
+    setResetLoading(true);
+    setErrorMsg('');
+    try {
+      const { data: checkData, error: checkError } = await supabase.functions.invoke(
+        'check-email-exists',
+        { body: { email: forgotEmail.trim() } },
+      );
+      if (checkError) {
+        setErrorMsg(isNetworkError(checkError) ? 'No internet connection' : 'Unable to check this email. Please try again.');
+        setResetLoading(false);
+        return;
+      }
+      if (!checkData?.exists) {
+        setErrorMsg('No account found with this email.');
+        setResetLoading(false);
+        return;
+      }
+      const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail.trim(), {
+        redirectTo: 'khushuai://auth/callback',
+      });
+      if (error) {
+        setErrorMsg(isNetworkError(error) ? 'No internet connection' : error.message);
+        setResetLoading(false);
+        return;
+      }
+      setStatus('link_sent');
+    } catch (error) {
+      setErrorMsg(isNetworkError(error) ? 'No internet connection' : 'Something went wrong. Please try again.');
+    }
+    setResetLoading(false);
   }
 
   // ─── render ──────────────────────────────────────────────────────────────────
@@ -221,8 +278,81 @@ export default function AccountScreen() {
                 </View>
               )}
 
+              {/* ── Forgot password: enter email ─────────────────────────── */}
+              {status === 'forgot_password' && (
+                <View className="items-center gap-y-4 mb-6">
+                  <View className="w-16 h-16 rounded-full bg-sage-600 items-center justify-center">
+                    <Text className="text-white text-2xl">🔒</Text>
+                  </View>
+                  <Text className="text-ink-700 font-medium text-base text-center">
+                    Reset your password
+                  </Text>
+                  <Text className="text-ink-300 text-sm text-center leading-relaxed">
+                    Enter your email and we{'\''}ll send you a sign-in link.
+                  </Text>
+                  <TextInput
+                    value={forgotEmail}
+                    onChangeText={setForgotEmail}
+                    placeholder="Email"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    className="bg-white border border-sand-200 rounded-xl px-4 py-3.5 text-ink-900 text-sm w-full"
+                    placeholderTextColor="#B8A99A"
+                  />
+                  {errorMsg ? (
+                    <Text className="text-red-400 text-xs text-center">{errorMsg}</Text>
+                  ) : null}
+                  <Pressable
+                    onPress={handleSendResetLink}
+                    disabled={resetLoading}
+                    className="bg-sage-600 py-4 rounded-2xl items-center w-full active:bg-sage-700"
+                  >
+                    {resetLoading
+                      ? <ActivityIndicator color="#FFFFFF" />
+                      : <Text className="text-white font-semibold text-base">Send link</Text>
+                    }
+                  </Pressable>
+                  <Pressable
+                    onPress={() => { setStatus('idle'); setErrorMsg(''); setForgotEmail(''); }}
+                    className="py-2"
+                  >
+                    <Text className="text-ink-300 text-sm">Back to sign in</Text>
+                  </Pressable>
+                </View>
+              )}
+
+              {/* ── Forgot password: link sent ────────────────────────────── */}
+              {status === 'link_sent' && (
+                <View className="items-center gap-y-4 mb-6">
+                  <View className="w-16 h-16 rounded-full bg-sage-600 items-center justify-center">
+                    <Text className="text-white text-2xl">✉</Text>
+                  </View>
+                  <Text className="text-ink-700 font-medium text-base text-center">
+                    Check your email
+                  </Text>
+                  <Text className="text-ink-300 text-sm text-center leading-relaxed">
+                    We sent a sign-in link to{'\n'}
+                    <Text className="text-ink-700 font-medium">{forgotEmail}</Text>
+                  </Text>
+                  <Text className="text-ink-300 text-xs text-center leading-relaxed">
+                    Click the link in the email to sign in. The link expires shortly.
+                  </Text>
+                  <Pressable
+                    onPress={handleSendResetLink}
+                    disabled={resetLoading}
+                    className="py-2"
+                  >
+                    {resetLoading
+                      ? <ActivityIndicator color="#5A7A5A" size="small" />
+                      : <Text className="text-sage-600 text-sm font-medium">Resend link</Text>
+                    }
+                  </Pressable>
+                </View>
+              )}
+
               {/* ── Email / Password ─────────────────────────────────────── */}
-              {status !== 'confirm_email' && (
+              {status !== 'confirm_email' && status !== 'forgot_password' && status !== 'link_sent' && (
               <View className="gap-y-3 mb-4">
                 <TextInput
                   value={email}
@@ -234,26 +364,50 @@ export default function AccountScreen() {
                   className="bg-white border border-sand-200 rounded-xl px-4 py-3.5 text-ink-900 text-sm"
                   placeholderTextColor="#B8A99A"
                 />
-                <TextInput
-                  value={password}
-                  onChangeText={setPassword}
-                  placeholder="Password"
-                  secureTextEntry
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  className="bg-white border border-sand-200 rounded-xl px-4 py-3.5 text-ink-900 text-sm"
-                  placeholderTextColor="#B8A99A"
-                />
+                <View className="flex-row items-center bg-white border border-sand-200 rounded-xl">
+                  <TextInput
+                    value={password}
+                    onChangeText={setPassword}
+                    placeholder="Password"
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    className="flex-1 px-4 py-3.5 text-ink-900 text-sm"
+                    placeholderTextColor="#B8A99A"
+                  />
+                  <Pressable
+                    onPress={() => setShowPassword((v) => !v)}
+                    className="px-3 py-3.5"
+                  >
+                    <Ionicons
+                      name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                      size={20}
+                      color="#B8A99A"
+                    />
+                  </Pressable>
+                </View>
+                {tab === 'signin' && (
+                  <Pressable
+                    onPress={() => {
+                      setForgotEmail(email);
+                      setErrorMsg('');
+                      setStatus('forgot_password');
+                    }}
+                    className="self-end"
+                  >
+                    <Text className="text-sage-600 text-xs font-medium">Forgot password?</Text>
+                  </Pressable>
+                )}
               </View>
               )}
 
               {/* ── Error message ────────────────────────────────────────── */}
-              {status !== 'confirm_email' && status === 'error' && errorMsg ? (
+              {status !== 'confirm_email' && status !== 'forgot_password' && status !== 'link_sent' && status === 'error' && errorMsg ? (
                 <Text className="text-red-400 text-xs mb-4 text-center">{errorMsg}</Text>
               ) : null}
 
               {/* ── Primary CTA ──────────────────────────────────────────── */}
-              {status !== 'confirm_email' && (
+              {status !== 'confirm_email' && status !== 'forgot_password' && status !== 'link_sent' && (
               <Pressable
                 onPress={handleEmailAuth}
                 disabled={status === 'loading'}
@@ -269,7 +423,7 @@ export default function AccountScreen() {
               )}
 
               {/* ── Divider ──────────────────────────────────────────────── */}
-              {status !== 'confirm_email' && (
+              {status !== 'confirm_email' && status !== 'forgot_password' && status !== 'link_sent' && (
               <>
               <View className="flex-row items-center gap-x-3 mb-4">
                 <View className="flex-1 h-px bg-sand-200" />

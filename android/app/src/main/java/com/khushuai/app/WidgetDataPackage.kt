@@ -1,4 +1,4 @@
-package com.khushuai.app.modules
+package com.khushuai.app
 
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.NativeModule

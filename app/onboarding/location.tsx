@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { View, Text, Pressable, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import * as Location from 'expo-location';
 import { useAppStore } from '@/store/appStore';
 import { calculatePrayerTimes } from '@/lib/prayer/prayerTimes';
@@ -11,6 +11,12 @@ import { settings } from '@/db/schema';
 export default function OnboardingLocation() {
   const { setLocation, setTodaysPrayerTimes } = useAppStore();
   const [status, setStatus] = useState<'idle' | 'loading' | 'denied' | 'error'>('idle');
+
+  useFocusEffect(
+    useCallback(() => {
+      setStatus('idle');
+    }, [])
+  );
 
   async function requestLocation() {
     setStatus('loading');

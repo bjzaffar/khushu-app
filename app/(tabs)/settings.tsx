@@ -2,12 +2,14 @@ import { View, Text, Switch, Pressable, ScrollView, ActivityIndicator, Platform,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useCallback, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
+import { useScrollToTop } from '@react-navigation/native';
 import { eq } from 'drizzle-orm';
 import { salahLogs } from '@/db/schema';
 import * as Location from 'expo-location';
 import { useAppStore } from '@/store/appStore';
 import { router } from 'expo-router';
 import { supabase } from '@/lib/supabase/client';
+import { clearLogsEverywhere } from '@/lib/supabase/sync';
 import { db } from '@/db/database';
 import { settings } from '@/db/schema';
 import { calculatePrayerTimes } from '@/lib/prayer/prayerTimes';
@@ -78,6 +80,9 @@ export default function SettingsScreen() {
   // Debug entry: 5 taps on version text within 3 seconds
   const debugTapCount = useRef(0);
   const debugTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const scrollRef = useRef<ScrollView>(null);
+  useScrollToTop(scrollRef);
 
   function handleDebugTap() {
     debugTapCount.current += 1;
@@ -231,14 +236,18 @@ export default function SettingsScreen() {
     setShowClearLogsModal(true);
   }
 
-  function confirmClearLogs() {
+  async function confirmClearLogs() {
     setShowClearLogsModal(false);
-    db.delete(salahLogs).run();
+    try {
+      await clearLogsEverywhere();
+    } catch (error) {
+      console.warn('[sync] salah_logs deletion queued for retry:', error);
+    }
   }
 
   return (
     <SafeAreaView className="flex-1 bg-sand-100">
-      <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 }} scrollEnabled={!wheelActive}>
+      <ScrollView ref={scrollRef} className="flex-1" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 }} scrollEnabled={!wheelActive}>
         <Text className="text-2xl font-semibold text-ink-900 mb-6">Settings</Text>
 
         {/* ── Location ─────────────────────────────────────────────────────── */}
@@ -497,6 +506,13 @@ export default function SettingsScreen() {
                   <Text className="text-sage-600 text-sm font-medium">→</Text>
                 </Pressable>
                 <Pressable
+                  onPress={() => router.push('/settings/change-password')}
+                  className="px-5 py-4 flex-row justify-between items-center border-b border-sand-100 active:bg-sand-100"
+                >
+                  <Text className="text-ink-700 font-medium text-sm">Change password</Text>
+                  <Text className="text-sage-600 text-sm font-medium">→</Text>
+                </Pressable>
+                <Pressable
                   onPress={handleClearLogs}
                   className="px-5 py-4 flex-row justify-between items-center border-b border-sand-100 active:bg-sand-100"
                 >
@@ -528,6 +544,13 @@ export default function SettingsScreen() {
                     </Text>
                   </View>
                   <Text className="text-sage-600 text-sm font-medium">Upgrade →</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => router.push('/settings/change-password')}
+                  className="px-5 py-4 flex-row justify-between items-center border-b border-sand-100 active:bg-sand-100"
+                >
+                  <Text className="text-ink-700 font-medium text-sm">Change password</Text>
+                  <Text className="text-sage-600 text-sm font-medium">→</Text>
                 </Pressable>
                 <Pressable
                   onPress={handleClearLogs}

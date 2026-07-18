@@ -26,12 +26,22 @@ import { count, gte, max } from 'drizzle-orm';
 import type { SalahName, CalculationMethodKey, AsrMadhab } from '@/types';
 import { supabase } from '@/lib/supabase/client';
 import { syncLogsFromCloud } from '@/lib/supabase/sync';
+import NetInfo from '@react-native-community/netinfo';
 import { refreshWidgetIfWeekChanged } from '@/lib/widget/widgetData';
+import { setPendingUrl } from '@/lib/deeplink';
+import * as Linking from 'expo-linking';
+
+// Capture the deep link URL IMMEDIATELY at module scope — before any async init blocks the navigator.
+// Without this, release builds lose the URL because the callback screen can't mount until
+// setup() finishes (1-3 s), by which time Linking.getInitialURL() already returns null.
+Linking.getInitialURL().then(setPendingUrl).catch(() => {});
 
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const {
+    isHydrated,
+    setIsHydrated,
     hasCompletedOnboarding,
     setHasCompletedOnboarding,
     setDbReady,
@@ -50,16 +60,24 @@ export default function RootLayout() {
   useEffect(() => {
     async function setup() {
       try {
+        // Rehydrate onboarding flag FIRST so the layout renders the correct stack
+        const onboardingVal = await SecureStore.getItemAsync('onboarding_complete');
+        if (onboardingVal === 'true') setHasCompletedOnboarding(true);
+        setIsHydrated(true);
+
         await initDatabase();
         await setupNotificationChannel();
 
         // Rehydrate Supabase session
         const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) setUserId(session.user.id);
-
-        // Rehydrate onboarding flag (uses SecureStore for reliable persistence in Expo Go)
-        const onboardingVal = await SecureStore.getItemAsync('onboarding_complete');
-        if (onboardingVal === 'true') setHasCompletedOnboarding(true);
+        if (session?.user) {
+          setUserId(session.user.id);
+          // Never block startup when the device is offline. The durable queue
+          // and connectivity listener will retry and refresh the cache later.
+          syncLogsFromCloud(session.user.id).catch((error) =>
+            console.warn('[supabase] startup log sync failed:', error)
+          );
+        }
 
         // Rehydrate notification settings
         const minutesRow = db.select().from(settings).where(eq(settings.key, 'reminder_minutes_before')).get();
@@ -129,13 +147,34 @@ export default function RootLayout() {
 
   // Keep userId in sync with Supabase auth state (sign in, sign out, token refresh)
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setUserId(session?.user?.id ?? null);
       if (session?.user && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
-        await syncLogsFromCloud();
+        // Supabase invokes this callback while holding its auth lock. Calling auth APIs
+        // from an async callback can deadlock setSession(), including recovery links.
+        // Queue the sync until after the callback and never let it block authentication.
+        const uid = session.user.id;
+        setTimeout(() => {
+          syncLogsFromCloud(uid).catch((error) =>
+            console.warn('[supabase] post-auth log sync failed:', error)
+          );
+        }, 0);
       }
     });
     return () => subscription.unsubscribe();
+  }, []);
+
+  // Flush offline saves as soon as the device regains an internet connection.
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      if (state.isConnected && state.isInternetReachable !== false) {
+        const uid = useAppStore.getState().userId;
+        syncLogsFromCloud(uid ?? undefined).catch((error) =>
+          console.warn('[supabase] reconnect log sync failed:', error)
+        );
+      }
+    });
+    return unsubscribe;
   }, []);
 
   // Handle notification taps:
@@ -150,6 +189,16 @@ export default function RootLayout() {
       } else if (data?.type === 'post_salah' && data.salah) {
         router.push({ pathname: '/(tabs)/log', params: { salah: data.salah } });
       }
+    });
+    return () => sub.remove();
+  }, []);
+
+  // Capture deep link URLs that arrive while the app is already running (warm start).
+  // Stores them so auth/callback can read via consumePendingUrl() instead of relying on
+  // Linking.getInitialURL() which only returns the cold-start URL.
+  useEffect(() => {
+    const sub = Linking.addEventListener('url', (event) => {
+      setPendingUrl(event.url);
     });
     return () => sub.remove();
   }, []);
@@ -169,6 +218,9 @@ export default function RootLayout() {
     );
   }
 
+  // Don't render anything until hydration determines the correct initial stack.
+  if (!isHydrated) return null;
+
   return (
     <SafeAreaProvider>
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -179,6 +231,8 @@ export default function RootLayout() {
         ) : (
           <Stack.Screen name="onboarding" />
         )}
+        <Stack.Screen name="auth/callback" />
+        <Stack.Screen name="settings/change-password" />
         <Stack.Screen name="salah-mode" options={{ presentation: 'fullScreenModal' }} />
         <Stack.Screen name="paywall" options={{ presentation: 'modal' }} />
         <Stack.Screen name="debug" options={{ presentation: 'modal' }} />

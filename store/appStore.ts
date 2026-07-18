@@ -2,6 +2,10 @@ import { create } from 'zustand';
 import type { Location, PrayerTimes, SalahName, CalculationMethodKey, AsrMadhab } from '@/types';
 
 interface AppState {
+  // ── Hydration ──────────────────────────────────────────────────────────────
+  isHydrated: boolean;
+  setIsHydrated: (val: boolean) => void;
+
   // ── Onboarding ──────────────────────────────────────────────────────────────
   hasCompletedOnboarding: boolean;
   setHasCompletedOnboarding: (val: boolean) => void;
@@ -47,6 +51,10 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set) => ({
+  // Hydration
+  isHydrated: false,
+  setIsHydrated: (val) => set({ isHydrated: val }),
+
   // Onboarding
   hasCompletedOnboarding: false,
   setHasCompletedOnboarding: (val) => set({ hasCompletedOnboarding: val }),

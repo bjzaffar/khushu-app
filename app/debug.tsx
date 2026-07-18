@@ -8,6 +8,7 @@ import { db } from '@/db/database';
 import { settings, salahLogs } from '@/db/schema';
 import { useAppStore } from '@/store/appStore';
 import { classifyDistraction, generateAIReminder } from '@/lib/notifications/reminderContent';
+import { queueLogUpsert } from '@/lib/supabase/sync';
 import { schedulePreSalahReminders } from '@/lib/notifications/notificationService';
 import { SALAH_NAMES, SALAH_DISPLAY_NAMES, type SalahName } from '@/types';
 
@@ -39,6 +40,7 @@ export default function DebugScreen() {
     calculationMethod,
     asrMadhab,
     reminderMinutesBefore,
+    userId,
   } = useAppStore();
 
   const [salah, setSalah] = useState<SalahName>('fajr');
@@ -105,7 +107,39 @@ export default function DebugScreen() {
         });
       }
 
-      // 3. Classify
+      // Sync seeded logs to cloud (best-effort, only if signed in)
+      if (userId) {
+        for (let i = 1; i <= 6; i++) {
+          const ts = now - i * DAY;
+          const date = new Date(ts).toISOString().split('T')[0];
+          await queueLogUpsert({
+            salahName: salah,
+            focusRating: 2,
+            distractions: customKey,
+            loggedAt: ts,
+            logDate: date,
+            fromSalahMode: false,
+            reminderType: 'short',
+            reflectionText: debugMarker,
+          }, userId).catch(() => {});
+        }
+        for (let i = 0; i < 4; i++) {
+          const ts = now - (i + 1) * DAY;
+          const date = new Date(ts).toISOString().split('T')[0];
+          await queueLogUpsert({
+            salahName: otherSalahs[i % otherSalahs.length],
+            focusRating: 3,
+            distractions: 'work',
+            loggedAt: ts,
+            logDate: date,
+            fromSalahMode: false,
+            reminderType: 'short',
+            reflectionText: debugMarker,
+          }, userId).catch(() => {});
+        }
+      }
+
+      // 4. Classify
       setStatus('classifying');
       setStatusMsg('Classifying distraction with AI…');
       const category = await classifyDistraction(trimmed);

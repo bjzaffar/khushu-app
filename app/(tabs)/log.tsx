@@ -11,12 +11,13 @@ import {
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { useScrollToTop } from '@react-navigation/native';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { eq, and } from 'drizzle-orm';
 import { db } from '@/db/database';
 import { salahLogs, settings } from '@/db/schema';
 import { useAppStore } from '@/store/appStore';
-import { supabase } from '@/lib/supabase/client';
+import { queueClassificationUpdate, queueLogUpsert } from '@/lib/supabase/sync';
 import {
   SALAH_NAMES,
   SALAH_DISPLAY_NAMES,
@@ -58,7 +59,7 @@ function getSettingJSON(key: string): unknown[] {
 
 export default function LogScreen() {
   const params = useLocalSearchParams<{ salah?: string; fromSalahMode?: string }>();
-  const { todaysPrayerTimes, userId, isPremium } = useAppStore();
+  const { todaysPrayerTimes, isPremium, userId } = useAppStore();
 
   function resolveInitialSalah(): SalahName {
     if (params.salah && SALAH_NAMES.includes(params.salah as SalahName)) {
@@ -82,6 +83,9 @@ export default function LogScreen() {
   }
 
   const [selectedSalah, setSelectedSalah] = useState<SalahName>(resolveInitialSalah);
+  const lastIntentSalahRef = useRef<SalahName | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  useScrollToTop(scrollRef);
   const [focusRating, setFocusRating] = useState(0);
   const [selectedDistractions, setSelectedDistractions] = useState<string[]>([]);
   const [saved, setSaved] = useState(false);
@@ -112,7 +116,9 @@ export default function LogScreen() {
     }
   }, []);
 
-  // When arriving from Salah Mode, reset and pre-select that Salah
+  // When screen gains focus, always open on first unlogged salah.
+  // If navigation params carry a new intent (salah mode / notification),
+  // consume it once and then clear so stale params don't override on tab re-open.
   useFocusEffect(
     useCallback(() => {
       setSaved(false);
@@ -120,10 +126,8 @@ export default function LogScreen() {
       setOtherInputText('');
       setFocusRating(0);
       setSelectedDistractions([]);
-      if (params.salah && SALAH_NAMES.includes(params.salah as SalahName)) {
-        setSelectedSalah(params.salah as SalahName);
-      }
-      // Load today's logs to detect already-logged prayers
+
+      // Load today's logs
       const today = new Date().toISOString().split('T')[0];
       const logs = db
         .select()
@@ -136,13 +140,20 @@ export default function LogScreen() {
       }
       setTodaysLogs(map);
 
-      // Auto-select first unlogged salah when no specific salah param
-      if (!params.salah || !SALAH_NAMES.includes(params.salah as SalahName)) {
-        const loggedSet = new Set(logs.map((l) => l.salahName));
-        const firstUnlogged = SALAH_NAMES.find((name) => !loggedSet.has(name));
-        if (firstUnlogged) {
-          setSelectedSalah(firstUnlogged);
-        }
+      const loggedSet = new Set(logs.map((l) => l.salahName));
+      const firstUnlogged = SALAH_NAMES.find((name) => !loggedSet.has(name));
+
+      const intentSalah =
+        params.salah && SALAH_NAMES.includes(params.salah as SalahName)
+          ? (params.salah as SalahName)
+          : null;
+
+      // New navigation intent (different from last consumed) — use it
+      if (intentSalah && lastIntentSalahRef.current !== intentSalah) {
+        setSelectedSalah(intentSalah);
+        lastIntentSalahRef.current = intentSalah;
+      } else if (firstUnlogged) {
+        setSelectedSalah(firstUnlogged);
       }
     }, [params.fromSalahMode, params.salah])
   );
@@ -242,6 +253,16 @@ export default function LogScreen() {
       reminderType,
     });
 
+    const cloudLog = {
+      salahName: selectedSalah,
+      focusRating,
+      distractions: selectedDistractions.join(','),
+      loggedAt: now.getTime(),
+      logDate,
+      fromSalahMode: params.fromSalahMode === '1',
+      reminderType,
+    };
+
     // Clear pending reminder type after it's been consumed
     if (pendingRow) {
       db.delete(settings).where(eq(settings.key, pendingKey)).run();
@@ -265,6 +286,9 @@ export default function LogScreen() {
                 .set({ classifiedCategory: category })
                 .where(eq(salahLogs.loggedAt, now.getTime()))
                 .run();
+              queueClassificationUpdate(cloudLog, category).catch((error) =>
+                console.warn('[sync] salah_logs classification update failed:', error)
+              );
             }
 
             await generateAIReminder(label, key, category, selectedSalah);
@@ -274,20 +298,9 @@ export default function LogScreen() {
     }
 
     // Fire-and-forget cloud sync (best-effort; local save already succeeded)
-    if (userId) {
-      supabase.from('salah_logs').insert({
-        user_id: userId,
-        salah_name: selectedSalah,
-        focus_rating: focusRating,
-        distractions: selectedDistractions.join(','),
-        logged_at: now.getTime(),
-        log_date: now.toISOString().split('T')[0],
-        from_salah_mode: params.fromSalahMode === '1',
-        reminder_type: reminderType,
-      }).then(({ error }) => {
-        if (error) console.warn('[sync] salah_logs insert failed:', error.message);
-      });
-    }
+    queueLogUpsert(cloudLog, userId).catch((error) =>
+      console.warn('[sync] salah_logs upsert queued for retry:', error)
+    );
 
     // Fire-and-forget widget data update
     writeWidgetData().catch((err) =>
@@ -301,9 +314,27 @@ export default function LogScreen() {
   }
 
   function handleLogAnother() {
+    const today = new Date().toISOString().split('T')[0];
+    const logs = db
+      .select()
+      .from(salahLogs)
+      .where(eq(salahLogs.logDate, today))
+      .all();
+    const map: Record<string, number> = {};
+    for (const log of logs) {
+      map[log.salahName] = log.focusRating;
+    }
+    setTodaysLogs(map);
+
+    const loggedSet = new Set(logs.map((l) => l.salahName));
+    const firstUnlogged = SALAH_NAMES.find((name) => !loggedSet.has(name));
+
     setFocusRating(0);
     setSelectedDistractions([]);
     setSaved(false);
+    if (firstUnlogged) {
+      setSelectedSalah(firstUnlogged);
+    }
   }
 
   // ── Acknowledgement ────────────────────────────────────────────────────────
@@ -344,6 +375,7 @@ export default function LogScreen() {
     >
       <SafeAreaView className="flex-1 bg-sand-100">
         <ScrollView
+          ref={scrollRef}
           className="flex-1"
           contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 }}
           keyboardShouldPersistTaps="handled"

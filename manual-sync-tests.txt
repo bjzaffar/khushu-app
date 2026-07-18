@@ -1,0 +1,111 @@
+Manual Sync Tests — Khushu AI
+=================================
+
+Prerequisites for all paths:
+- Build & install a fresh release variant: npx expo run:android --variant release
+- Have an email/password account ready for sign-in
+- The account should have NO existing salah logs in Supabase (fresh account)
+
+
+Test Path A — Basic sync (local → cloud → rehydrate on restart)
+-----------------------------------------------------------------
+1. Clear app data: Android → hold app icon → App Info → Clear data
+2. Open app
+3. Complete onboarding (set location, prayer times)
+4. Sign in with email/password (Create account or Sign in)
+5. Navigate to Log tab
+6. Log 3 different salahs (e.g. Fajr, Dhuhr, Asr — different names or re-log the same name on different dates)
+7. Wait 5 seconds for the fire-and-forget sync to complete
+8. Close the app completely (swipe from recents)
+9. Reopen the app
+10. Navigate to Log screen or Insights screen
+11. Expected: All 3 logs are visible
+    If not → sync from local to cloud, or cloud rehydrate on startup, is broken
+
+
+Test Path B — Clear data + re-sign-in (the reported issue)
+-----------------------------------------------------------
+1. Start from the end of Path A (logs are visible in the app)
+2. Android: hold app icon → App Info → Clear data (not just cache)
+3. Open app fresh
+4. Complete onboarding
+5. Sign in with the SAME email/password used in Path A
+6. Navigate to Log screen or Insights screen
+7. Expected: The 3 logs from Path A are visible (pulled from Supabase)
+    If not → syncLogsFromCloud on sign-in is broken
+
+
+Test Path C — Debug seed survives clear + re-sign-in
+-----------------------------------------------------
+1. Clear app data
+2. Open app, complete onboarding
+3. Sign in with email/password
+4. Navigate to Debug screen
+5. Enter a custom distraction label (e.g. "phone scrolling")
+6. Tap "Seed & Generate AI Reminder"
+7. Wait for status to show "Done"
+8. Go back, verify logs appear in Insights or Log history
+9. Sign out via Settings → Sign out
+10. Android: Clear app data
+11. Open app, complete onboarding
+12. Sign in with the SAME account
+13. Navigate to Insights or Log screen
+14. Expected: The debug-seeded logs are visible
+    If not → the queueLogUpsert calls in debug.tsx are broken
+
+
+Test Path D — Offline queue + flush on reconnect
+-------------------------------------------------
+1. Clear app data
+2. Open app, complete onboarding
+3. Sign in with email/password
+4. Enable Airplane mode on device (or disconnect network)
+5. Log 2 salahs (they save locally; sync is queued but cannot send)
+6. Disable Airplane mode (restore network)
+7. Wait 15 seconds (the NetInfo connectivity listener fires with a delay)
+8. Sign out via Settings → Sign out
+9. Android: Clear app data
+10. Open app, complete onboarding
+11. Sign in with the SAME account
+12. Navigate to Log/Insights
+13. Expected: The 2 logs from step 5 are visible
+    If not → queue persistence or the NetInfo flush-on-reconnect path is broken
+
+
+Test Path E — Guest data is NOT pushed to cloud (intentional limitation)
+-------------------------------------------------------------------------
+1. Clear app data
+2. Open app, complete onboarding
+3. Choose "Skip for now — stay local only" (stay as guest)
+4. Log 2 salahs
+5. Go to Settings → Sign in
+6. Sign in with email/password (or create account)
+7. Expected: The 2 guest logs are LOST — the local DB is replaced with cloud data (which is empty).
+    This is the current intended behaviour: guest data does not merge into the cloud account.
+    Confirm this so you are aware of the limitation.
+
+
+Test Path F — Multi-session (two devices / two sign-in cycles)
+---------------------------------------------------------------
+1. Clear app data, open app, complete onboarding
+2. Sign in with email/password (Device A session)
+3. Log 2 salahs
+4. Wait 5 seconds for sync
+5. Sign out (do NOT clear data)
+6. Sign in with the SAME account again (Device A session 2)
+7. Navigate to Log/Insights
+8. Expected: The 2 logs from step 3 are visible
+    If not → sign-out + sign-in (same device, no clear) loses data
+
+
+After any failure:
+------------------
+- Check Metro / logcat for warning messages containing "[supabase]" or "[sync]"
+- The most common failure mode is the userId being null at the point of sync
+  due to the supabase.auth.getUser() network call failing.
+- Re-check that the build includes the latest changes from all edited files:
+    lib/supabase/sync.ts
+    app/(tabs)/log.tsx
+    app/_layout.tsx
+    app/debug.tsx
+    app/onboarding/account.tsx

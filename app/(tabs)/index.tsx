@@ -1,7 +1,8 @@
 import { View, Text, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
+import { useScrollToTop } from '@react-navigation/native';
 import { useAppStore } from '@/store/appStore';
 import {
   SALAH_DISPLAY_NAMES,
@@ -33,6 +34,8 @@ export default function HomeScreen() {
   const { todaysPrayerTimes, startSalahMode } = useAppStore();
   // salahName → focusRating for logs today
   const [todaysLogs, setTodaysLogs] = useState<Record<string, number>>({});
+  const scrollRef = useRef<ScrollView>(null);
+  useScrollToTop(scrollRef);
 
   // Reload today's logs whenever this tab is focused
   useFocusEffect(
@@ -65,7 +68,7 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-sand-100">
-      <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 }}>
+      <ScrollView ref={scrollRef} className="flex-1" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 }}>
         {/* Header */}
         <View className="mb-6">
           <Text className="text-2xl font-semibold text-ink-900">Today</Text>
