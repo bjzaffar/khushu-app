@@ -5,7 +5,7 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Khushu AI design tokens — minimal, calm, low stimulation
+        // Khushu App design tokens — minimal, calm, low stimulation
         sand: {
           50:  '#FAF7F2',
           100: '#F9F5EE',

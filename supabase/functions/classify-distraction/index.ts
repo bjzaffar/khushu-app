@@ -105,7 +105,11 @@ Classify it into EXACTLY one of these categories:
 - rushing (hurry, running late, time pressure)
 - random (wandering mind, unrelated thoughts, daydreaming)
 
-Return ONLY the category key as a single word. If the text does not clearly fit any category, return nothing.`,
+Infer the underlying concern, not only the literal words. For example:
+- "No food", food insecurity, or scarcity-driven hunger -> anxiety
+- bills, debt, income, provision, or rizq -> financial
+
+Return ONLY the category key as a single word. If the text does not clearly fit a specific category, return random.`,
           },
         ],
       }),
@@ -130,7 +134,7 @@ Return ONLY the category key as a single word. If the text does not clearly fit 
       "rushing",
       "random",
     ];
-    const category = validKeys.includes(raw) ? raw : null;
+    const category = validKeys.includes(raw) ? raw : "random";
 
     return new Response(JSON.stringify({ category }), {
       status: 200,

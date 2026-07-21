@@ -10,7 +10,7 @@ export default function OnboardingWelcome() {
         <View className="items-center">
           <Text className="text-6xl mb-4">🕌</Text>
           <Text className="text-3xl font-semibold text-ink-900 tracking-tight">
-            Khushu AI
+            Khushu App
           </Text>
           <Text className="text-ink-300 text-sm mt-2 tracking-widest uppercase">
             Focus. Presence. Prayer.

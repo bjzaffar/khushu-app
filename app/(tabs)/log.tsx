@@ -122,6 +122,7 @@ export default function LogScreen() {
   useFocusEffect(
     useCallback(() => {
       setSaved(false);
+      setEditMode(false);
       setShowOtherInput(false);
       setOtherInputText('');
       setFocusRating(0);
@@ -164,6 +165,12 @@ export default function LogScreen() {
     );
   }
 
+  function rememberCustomLabel(distraction: { key: string; label: string }) {
+    const labels = getSettingJSON('custom_distraction_labels') as { key: string; label: string }[];
+    if (labels.some((entry) => entry.key === distraction.key)) return;
+    saveSettingJSON('custom_distraction_labels', [...labels, distraction]);
+  }
+
   function handleAddCustomDistraction() {
     const label = otherInputText.trim().slice(0, 100);
     if (!label) return;
@@ -171,7 +178,8 @@ export default function LogScreen() {
     const newList = [...customDistractions, { key, label }];
     setCustomDistractions(newList);
     saveSettingJSON('custom_distractions', newList);
-    setSelectedDistractions((prev) => [...prev, key]);
+    rememberCustomLabel({ key, label });
+    setSelectedDistractions([key]);
     setOtherInputText('');
     setShowOtherInput(false);
   }
@@ -191,6 +199,7 @@ export default function LogScreen() {
     setSelectedDistractions((prev) => prev.filter((k) => k !== key));
 
     if (deleted) {
+      rememberCustomLabel(deleted);
       const archive = getSettingJSON('deleted_custom_distractions') as { key: string; label: string }[];
       archive.push({ key: deleted.key, label: deleted.label });
       saveSettingJSON('deleted_custom_distractions', archive);
@@ -207,6 +216,7 @@ export default function LogScreen() {
     const found = archive.find((d) => d.key === key);
     if (!found) return;
 
+    rememberCustomLabel(found);
     const newActive = [...customDistractions, found];
     setCustomDistractions(newActive);
     saveSettingJSON('custom_distractions', newActive);
@@ -222,6 +232,7 @@ export default function LogScreen() {
     saveSettingJSON('deleted_custom_distractions', newArchive);
 
     if (found) {
+      rememberCustomLabel(found);
       const historical = getSettingJSON('historical_custom_labels') as { key: string; label: string }[];
       historical.push({ key: found.key, label: found.label });
       saveSettingJSON('historical_custom_labels', historical);
@@ -557,10 +568,17 @@ export default function LogScreen() {
               {/* Other chip — hidden in edit mode */}
               {!hiddenBuiltins.includes('other') && !editMode && (
                 <Pressable
-                  onPress={() => setShowOtherInput(true)}
-                  className="py-2 px-4 rounded-xl bg-sand-200"
+                  onPress={() => {
+                    setSelectedDistractions(['other']);
+                    setShowOtherInput(true);
+                  }}
+                  className={`py-2 px-4 rounded-xl ${
+                    selectedDistractions.includes('other') ? 'bg-sage-600' : 'bg-sand-200'
+                  }`}
                 >
-                  <Text className="text-sm font-medium text-ink-700">Other</Text>
+                  <Text className={`text-sm font-medium ${
+                    selectedDistractions.includes('other') ? 'text-white' : 'text-ink-700'
+                  }`}>Other</Text>
                 </Pressable>
               )}
             </View>
@@ -612,7 +630,11 @@ export default function LogScreen() {
                 />
                 <View className="flex-row gap-x-2 mt-3">
                   <Pressable
-                    onPress={() => { setShowOtherInput(false); setOtherInputText(''); }}
+                    onPress={() => {
+                      setSelectedDistractions([]);
+                      setShowOtherInput(false);
+                      setOtherInputText('');
+                    }}
                     className="flex-1 py-2 rounded-xl bg-sand-100 items-center"
                   >
                     <Text className="text-ink-500 text-sm">Cancel</Text>

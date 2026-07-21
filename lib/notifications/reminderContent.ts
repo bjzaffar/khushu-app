@@ -1,4 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
+import { eq } from 'drizzle-orm';
+import { db } from '@/db/database';
+import { settings } from '@/db/schema';
 import { supabase } from '@/lib/supabase/client';
 import templates from '@/content/reminders/distraction_templates.json';
 import type { PatternResult, DistractionKey, SalahName, ReminderType } from '@/types';
@@ -7,26 +10,68 @@ interface TemplateEntry { text: string; type: ReminderType; }
 
 // ── Cache layer (expo-secure-store) ─────────────────────────────────────────
 
-interface CachedReminder { text: string; timestamp: number; }
+export interface GeneratedReminder { text: string; type: ReminderType; }
+
+interface CachedReminder extends GeneratedReminder { timestamp: number; }
 
 function cacheKey(customKey: string): string {
   return `ai_cache_${customKey}`;
 }
 
-export function getCachedReminder(customKey: string): string | null {
+export function getCachedReminder(customKey: string): GeneratedReminder | null {
   const key = cacheKey(customKey);
   const raw = SecureStore.getItem(key);
   if (!raw) return null;
   try {
     const cached: CachedReminder = JSON.parse(raw);
-    return cached.text;
+    if (!cached.text || !['short', 'attribute', 'ayah', 'hadith'].includes(cached.type)) return null;
+    if (
+      cached.text.startsWith('You\'ve been logging "') &&
+      cached.text.includes('Take a deep breath and refocus on Allah before you begin.')
+    ) {
+      return null;
+    }
+    return { text: cached.text, type: cached.type };
   } catch { return null; }
 }
 
-function setCachedReminder(customKey: string, reminder: string): void {
+function setCachedReminder(customKey: string, reminder: GeneratedReminder): void {
   SecureStore.setItem(cacheKey(customKey), JSON.stringify({
-    text: reminder, timestamp: Date.now(),
+    ...reminder, timestamp: Date.now(),
   }));
+}
+
+interface CustomDistraction { key: string; label: string; }
+
+function getCustomDistractionLabel(customKey: string): string | null {
+  const settingKeys = [
+    'custom_distractions',
+    'custom_distraction_labels',
+    'deleted_custom_distractions',
+    'historical_custom_labels',
+  ];
+
+  for (const settingKey of settingKeys) {
+    const row = db.select().from(settings).where(eq(settings.key, settingKey)).get();
+    if (!row) continue;
+    try {
+      const distractions = JSON.parse(row.value) as CustomDistraction[];
+      const label = distractions.find((distraction) => distraction.key === customKey)?.label?.trim();
+      if (label) return label;
+    } catch {
+      // Ignore malformed historical label data and use the safe generic fallback below.
+    }
+  }
+
+  return null;
+}
+
+function getCustomFallbackReminder(customKey: string): GeneratedReminder {
+  const label = getCustomDistractionLabel(customKey) ?? 'this distraction';
+  return {
+    text: `You've been struggling with ${label}. Refocus on Allah before you begin.`,
+    type: 'short',
+  };
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -78,7 +123,7 @@ export async function generateAIReminder(
   customKey: string,
   closestCategory: DistractionKey | null,
   prayerName: SalahName
-): Promise<string | null> {
+): Promise<GeneratedReminder | null> {
   console.log(`[generate] Called text="${text}" category=${closestCategory} prayer=${prayerName}`);
   const cached = getCachedReminder(customKey);
   if (cached) return cached;
@@ -92,27 +137,17 @@ export async function generateAIReminder(
 
     const allDistractions = templates.distractions as Record<
       string,
-      { llm_guidance: { theme: string; avoid: string; tone: string }; established: { text: string; type: string }[] }
+      { llm_guidance: { theme: string; avoid: string; tone: string }; established: TemplateEntry[] }
     >;
 
-    // Use 'random' guidance when category is null
-    const guidanceKey = closestCategory ?? 'random';
-    const guidance = allDistractions[guidanceKey]?.llm_guidance;
+    // Unknown custom distractions use the random category rather than every template.
+    const foundationCategory = closestCategory ?? 'random';
+    const guidance = allDistractions[foundationCategory]?.llm_guidance;
     if (!guidance) return null;
 
-    // Gather established texts for the AI to build off of
-    let establishedTexts: string[] = [];
-    if (closestCategory) {
-      // Classified as a specific category → feed only that category's established texts
-      establishedTexts = (allDistractions[closestCategory]?.established ?? []).map((e) => e.text);
-    } else {
-      // Unclassified → feed ALL categories' established texts so AI can pick the best fit
-      for (const cat of Object.values(allDistractions)) {
-        for (const e of cat.established ?? []) {
-          establishedTexts.push(e.text);
-        }
-      }
-    }
+    const established = allDistractions[foundationCategory]?.established ?? [];
+    if (established.length === 0) return null;
+    const foundationReminders = [pick(established)];
 
     const res = await fetch(
       `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/generate-reminder`,
@@ -124,17 +159,26 @@ export async function generateAIReminder(
           'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
         },
         body: JSON.stringify({
-          text, closestCategory, prayerName, llmGuidance: guidance, establishedTexts,
+          text,
+          closestCategory: foundationCategory,
+          prayerName,
+          llmGuidance: guidance,
+          foundationReminders,
         }),
       }
     );
     const body = await res.json();
     console.log(`[generate] status=${res.status} body=${JSON.stringify(body).substring(0, 200)}`);
     if (!res.ok) return null;
-    const { reminder } = body;
-    if (typeof reminder === 'string' && reminder.length > 0) {
-      setCachedReminder(customKey, reminder);
-      return reminder;
+    const { reminder, reminderType } = body;
+    if (
+      typeof reminder === 'string' &&
+      reminder.length > 0 &&
+      ['short', 'attribute', 'ayah', 'hadith'].includes(reminderType)
+    ) {
+      const generated = { text: reminder, type: reminderType as ReminderType };
+      setCachedReminder(customKey, generated);
+      return generated;
     }
     return null;
   } catch { return null; }
@@ -147,7 +191,7 @@ export async function generateAIReminder(
  * cold_start  → random short grounding reminder
  * emerging    → soft observational text for the top distraction
  * established → distraction → Divine Attribute reminder (random from pool)
- * custom key  → cached AI reminder (or cold_start fallback)
+ * custom key  → cached AI reminder (or a concrete local fallback)
  */
 export function getReminderContent(pattern: PatternResult): { text: string; type: ReminderType } {
   const coldPool = templates.cold_start as TemplateEntry[];
@@ -161,8 +205,8 @@ export function getReminderContent(pattern: PatternResult): { text: string; type
   // Custom key → use cached AI reminder
   if (topKey.startsWith('custom_')) {
     const cached = getCachedReminder(topKey);
-    if (cached) return { text: cached, type: 'ai' };
-    return pick(coldPool); // fallback if cache expired
+    if (cached) return cached;
+    return getCustomFallbackReminder(topKey);
   }
 
   // Built-in key → use template

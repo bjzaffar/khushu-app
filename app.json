@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Khushu AI",
+    "name": "Khushu",
     "slug": "khushu-ai",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -16,7 +16,7 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.khushuai.app",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Khushu AI needs your location to calculate accurate prayer times for your city."
+        "NSLocationWhenInUseUsageDescription": "Khushu App needs your location to calculate accurate prayer times for your city."
       }
     },
     "android": {
@@ -45,7 +45,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Khushu AI needs your location to calculate accurate prayer times for your city."
+          "locationWhenInUsePermission": "Khushu App needs your location to calculate accurate prayer times for your city."
         }
       ],
       [

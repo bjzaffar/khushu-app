@@ -7,6 +7,7 @@ import { eq } from 'drizzle-orm';
 import { salahLogs } from '@/db/schema';
 import * as Location from 'expo-location';
 import { useAppStore } from '@/store/appStore';
+import { getDeviceLocation } from '@/lib/location/deviceLocation';
 import { router } from 'expo-router';
 import { supabase } from '@/lib/supabase/client';
 import { clearLogsEverywhere } from '@/lib/supabase/sync';
@@ -75,6 +76,7 @@ export default function SettingsScreen() {
   const [methodDropdownOpen, setMethodDropdownOpen] = useState(false);
   const [showSignOutModal, setShowSignOutModal] = useState(false);
   const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+  const [showFinalDeleteAccountModal, setShowFinalDeleteAccountModal] = useState(false);
   const [showClearLogsModal, setShowClearLogsModal] = useState(false);
 
   // Debug entry: 5 taps on version text within 3 seconds
@@ -157,17 +159,12 @@ export default function SettingsScreen() {
 
   async function handleUpdateLocation() {
     setLocationStatus('loading');
-    const { status: permStatus } = await Location.requestForegroundPermissionsAsync();
-    if (permStatus !== 'granted') {
-      setLocationStatus('error');
-      return;
-    }
     try {
-      let loc = await Location.getLastKnownPositionAsync();
-      if (!loc) {
-        loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const coords = await getDeviceLocation();
+      if (!coords) {
+        setLocationStatus('error');
+        return;
       }
-      const coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
       useAppStore.getState().setLocation(coords);
       db.insert(settings).values({ key: 'location_lat', value: String(coords.latitude) })
         .onConflictDoUpdate({ target: settings.key, set: { value: String(coords.latitude) } }).run();
@@ -221,6 +218,7 @@ export default function SettingsScreen() {
   }
 
   async function confirmDeleteAccount() {
+    setShowFinalDeleteAccountModal(false);
     setShowDeleteAccountModal(false);
     try {
       await supabase.rpc('delete_user');
@@ -473,6 +471,7 @@ export default function SettingsScreen() {
           </Text>
           <View className="bg-white rounded-2xl border border-sand-200 overflow-hidden">
             {!userId ? (
+              <>
               <Pressable
                 onPress={() => router.push({ pathname: '/onboarding/account', params: { from: 'settings' } })}
                 className="px-5 py-4 flex-row justify-between items-center active:bg-sand-100"
@@ -485,6 +484,13 @@ export default function SettingsScreen() {
                 </View>
                 <Text className="text-sage-600 text-sm font-medium">Sign in →</Text>
               </Pressable>
+              <Pressable
+                onPress={handleClearLogs}
+                className="px-5 py-4 flex-row justify-between items-center active:bg-sand-100"
+              >
+                <Text className="text-red-400 font-medium text-sm">Clear all log history</Text>
+              </Pressable>
+              </>
             ) : isPremium ? (
               <>
                 <View className="px-5 py-4 flex-row justify-between items-center border-b border-sand-100">
@@ -577,7 +583,7 @@ export default function SettingsScreen() {
 
         {/* ── Version (hidden debug entry) ────────────────────────────────── */}
         <Pressable onPress={handleDebugTap} className="items-center py-4">
-          <Text className="text-ink-300 text-xs">Khushu AI v1.0.0</Text>
+          <Text className="text-ink-300 text-xs">Khushu App v1.0.0</Text>
         </Pressable>
 
       </ScrollView>
@@ -628,7 +634,10 @@ export default function SettingsScreen() {
                 <Text className="text-ink-700 font-medium">Cancel</Text>
               </Pressable>
               <Pressable
-                onPress={confirmDeleteAccount}
+                onPress={() => {
+                  setShowDeleteAccountModal(false);
+                  setShowFinalDeleteAccountModal(true);
+                }}
                 className="flex-1 py-3 rounded-2xl bg-red-500 items-center"
               >
                 <Text className="text-white font-medium">Delete</Text>
@@ -639,6 +648,33 @@ export default function SettingsScreen() {
       </Modal>
 
       {/* ── Clear Logs Confirmation Modal ──────────────────────────────── */}
+      <Modal visible={showFinalDeleteAccountModal} transparent animationType="fade">
+        <Pressable className="flex-1 bg-black/30 items-center justify-center px-8" onPress={() => setShowFinalDeleteAccountModal(false)}>
+          <Pressable className="bg-white rounded-2xl p-6 w-full max-w-sm" onPress={(e) => e.stopPropagation()}>
+            <Text className="text-ink-900 text-base font-semibold text-center mb-2">
+              Permanently delete account?
+            </Text>
+            <Text className="text-ink-400 text-sm text-center mb-6">
+              This cannot be undone.
+            </Text>
+            <View className="flex-row gap-x-3">
+              <Pressable
+                onPress={() => setShowFinalDeleteAccountModal(false)}
+                className="flex-1 py-3 rounded-2xl bg-sand-200 items-center"
+              >
+                <Text className="text-ink-700 font-medium">Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={confirmDeleteAccount}
+                className="flex-1 py-3 rounded-2xl bg-red-500 items-center"
+              >
+                <Text className="text-white font-medium">Delete account</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       <Modal visible={showClearLogsModal} transparent animationType="fade">
         <Pressable className="flex-1 bg-black/30 items-center justify-center px-8" onPress={() => setShowClearLogsModal(false)}>
           <Pressable className="bg-white rounded-2xl p-6 w-full max-w-sm" onPress={(e) => e.stopPropagation()}>

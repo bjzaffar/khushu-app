@@ -32,14 +32,13 @@ export const DISTRACTION_LABELS: Record<DistractionKey, string> = {
 };
 
 // ─── Reminder Types ────────────────────────────────────────────────────────────
-export type ReminderType = 'short' | 'attribute' | 'ayah' | 'hadith' | 'ai';
+export type ReminderType = 'short' | 'attribute' | 'ayah' | 'hadith';
 
 export const REMINDER_TYPE_LABELS: Record<ReminderType, string> = {
   short:     'Brief grounding',
   attribute: 'Divine Attribute',
   ayah:      'Quranic verse',
   hadith:    'Hadith',
-  ai:        'AI Personalized',
 };
 
 // ─── Pattern Detection ─────────────────────────────────────────────────────────

@@ -2,9 +2,9 @@ import { useState, useCallback } from 'react';
 import { View, Text, Pressable, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
-import * as Location from 'expo-location';
 import { useAppStore } from '@/store/appStore';
 import { calculatePrayerTimes } from '@/lib/prayer/prayerTimes';
+import { getDeviceLocation } from '@/lib/location/deviceLocation';
 import { db } from '@/db/database';
 import { settings } from '@/db/schema';
 
@@ -20,26 +20,12 @@ export default function OnboardingLocation() {
 
   async function requestLocation() {
     setStatus('loading');
-    const { status: permStatus } = await Location.requestForegroundPermissionsAsync();
-
-    if (permStatus !== 'granted') {
-      setStatus('denied');
-      return;
-    }
-
     try {
-      // Try current position first; fall back to last known if GPS is slow
-      let loc = await Location.getLastKnownPositionAsync();
-      if (!loc) {
-        loc = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
+      const coords = await getDeviceLocation();
+      if (!coords) {
+        setStatus('denied');
+        return;
       }
-
-      const coords = {
-        latitude: loc.coords.latitude,
-        longitude: loc.coords.longitude,
-      };
 
       setLocation(coords);
       setTodaysPrayerTimes(calculatePrayerTimes(coords));
@@ -70,7 +56,7 @@ export default function OnboardingLocation() {
             Prayer times for your location
           </Text>
           <Text className="text-ink-300 text-sm text-center leading-relaxed mt-2">
-            Khushu AI calculates your prayer times locally using your device's GPS — no data leaves your device.
+            Khushu App calculates your prayer times locally using your device's GPS — no data leaves your device.
           </Text>
         </View>
 

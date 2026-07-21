@@ -11,6 +11,12 @@ const corsHeaders = {
 const rateLimits = new Map<string, number[]>();
 const RATE_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 const RATE_MAX = 30; // 30 calls per hour per user
+const VALID_REMINDER_TYPES = new Set(["short", "attribute", "ayah", "hadith"]);
+
+type FoundationReminder = {
+  text: string;
+  type: string;
+};
 
 function isRateLimited(userId: string): boolean {
   const now = Date.now();
@@ -53,7 +59,7 @@ serve(async (req) => {
       });
     }
 
-    const { text, closestCategory, prayerName, llmGuidance, establishedTexts } =
+    const { text, closestCategory, prayerName, llmGuidance, foundationReminders } =
       await req.json();
 
     if (!text || typeof text !== "string" || text.length > 200) {
@@ -80,6 +86,23 @@ serve(async (req) => {
       );
     }
 
+    const candidates = Array.isArray(foundationReminders)
+      ? foundationReminders.filter((entry): entry is FoundationReminder =>
+        entry &&
+        typeof entry.text === "string" &&
+        entry.text.length > 0 &&
+        typeof entry.type === "string" &&
+        VALID_REMINDER_TYPES.has(entry.type)
+      )
+      : [];
+
+    if (candidates.length === 0) {
+      return new Response(JSON.stringify({ error: "foundationReminders are required" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Rate limit check
     if (isRateLimited(user.id)) {
       return new Response(
@@ -91,11 +114,9 @@ serve(async (req) => {
       );
     }
 
-    // Build the established texts section of the prompt
-    const textsList = Array.isArray(establishedTexts) && establishedTexts.length > 0
-      ? establishedTexts.map((t: string, i: number) => `${i + 1}. "${t}"`).join("\n")
-      : "";
-
+    const foundationsList = candidates
+      .map((entry, i) => `${i + 1}. [${entry.type}] "${entry.text}"`)
+      .join("\n");
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -105,7 +126,7 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         model: "claude-haiku-4-5",
-        max_tokens: 60,
+        max_tokens: 100,
         temperature: 0.7,
         messages: [
           {
@@ -119,15 +140,17 @@ ${closestCategory ? `Closest category: ${closestCategory}` : "This distraction d
 Theme: ${llmGuidance.theme}
 Tone: ${llmGuidance.tone}
 Avoid: ${llmGuidance.avoid}
-${textsList ? `\nHere are existing reminders for similar distractions. Use them as inspiration — build off one of them but adapt it to this user's specific distraction:\n${textsList}` : ""}
+Here are the eligible foundation reminders. Build off of EXACTLY ONE of them, adapting it to this user's specific distraction:
+${foundationsList}
 
 Write ONE sentence (max 25 words) that:
 1. Names the specific distraction briefly
-2. Connects it to a relevant Divine Attribute or the theme
-3. Gently redirects attention to the prayer
+2. Aligns with the theme
+3. Gently redirects attention away from the distraction by framing Allah as the solver of that distraction or as more deserving of the user's attention
 4. Matches the tone and avoids what's listed
+5. If naming an attribute, include a concise English translation of the name in brackets directly after
 
-Return ONLY the reminder text, no quotes or formatting.`,
+Return ONLY the reminder text, with no quotes or formatting. If quoting a hadith or ayah, DO NOT alter any text within that specific quote`,
           },
         ],
       }),
@@ -143,7 +166,6 @@ Return ONLY the reminder text, no quotes or formatting.`,
     }
 
     const reminder = (data.content?.[0]?.text ?? "").trim();
-
     if (!reminder) {
       return new Response(JSON.stringify({ reminder: null }), {
         status: 200,
@@ -151,7 +173,8 @@ Return ONLY the reminder text, no quotes or formatting.`,
       });
     }
 
-    return new Response(JSON.stringify({ reminder }), {
+    const foundation = candidates[0];
+    return new Response(JSON.stringify({ reminder, reminderType: foundation.type }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

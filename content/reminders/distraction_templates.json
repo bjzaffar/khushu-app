@@ -62,7 +62,7 @@
         { "text": "Allah does not burden a soul more than it can bear. - Surah Al-Baqarah 2:286", "type": "ayah"},
         { "text": "So verily with hardship comes ease. Verily with hardship comes ease. - Surah Ash-Sharh 94:5-6", "type": "ayah"},
         { "text": "You've sometimes noticed anxiety about the future creeping into this Salah.", "type": "short" },
-        { "text": "Worry about what is coming has occasionally distracted you here.", "type": "short" }
+        { "text": "Worrying about what is coming has occasionally distracted you here.", "type": "short" }
       ],
       "llm_guidance": {
         "theme": "Allah as the direct answer to fear of the unknown — He already holds what we are afraid of",
@@ -80,7 +80,7 @@
         { "text": "You are standing before As-Samad, the One everyone and everything turns to in need. You turned to Him. That is the whole point.", "type": "attribute" },
         { "text": "You showed up tired. That effort is not lost on Allah.", "type": "short" },
         { "text": "You've noted tiredness during this Salah at times.", "type": "short" },
-        { "text": "Tiredness has occasionally made this prayer feel heavy.", "type": "short" }
+        { "text": "Tiredness has made this prayer feel heavy at times.", "type": "short" }
       ],
       "llm_guidance": {
         "theme": "the act of showing up tired is itself an act of worship — Allah's strength carries what ours cannot",

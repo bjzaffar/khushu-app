@@ -2,7 +2,7 @@
 2. ***DONE*** Fix email links
 3. ***DONE*** Make it so logs are synced to supabase two-way
 4. ***DONE*** Location not found and completed logs on log page
-5. Change the "reminders that work best for you" insight, and make it actually change what types of reminders are usually given
+5. ***DONE*** Change the "reminders that work best for you" insight
 5. Security for custom distraction text box
 6. Edit distraction_templates.json thoroughly
 7. RevenueCat

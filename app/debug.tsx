@@ -2,7 +2,6 @@ import { View, Text, TextInput, Pressable, ScrollView, ActivityIndicator, Alert 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useState } from 'react';
 import { router } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
 import { eq, and, gte, count, like } from 'drizzle-orm';
 import { db } from '@/db/database';
 import { settings, salahLogs } from '@/db/schema';
@@ -152,13 +151,8 @@ export default function DebugScreen() {
       // Fallback: if edge function failed, write a test reminder directly to SecureStore
       if (!aiResult) {
         console.log(`[debug] generateAIReminder returned null — writing fallback to SecureStore`);
-        const fallbackText = `You've been logging "${trimmed}" in ${SALAH_DISPLAY_NAMES[salah]}. Take a deep breath and refocus on Allah before you begin.`;
-        const storeKey = `ai_cache_${customKey}`;
-        SecureStore.setItem(storeKey, JSON.stringify({ text: fallbackText, timestamp: Date.now() }));
-        const verifyRead = SecureStore.getItem(storeKey);
-        console.log(`[debug] SecureStore verify key=${storeKey} readBack=${verifyRead ? 'OK' : 'FAILED'}`);
       } else {
-        console.log(`[debug] generateAIReminder succeeded: ${aiResult.substring(0, 60)}`);
+        console.log(`[debug] generateAIReminder succeeded: ${aiResult.text.substring(0, 60)}`);
       }
 
       // 5. Re-schedule notifications
@@ -180,7 +174,7 @@ export default function DebugScreen() {
         `Key: ${customKey}\n` +
         `Verified: ${verifyLogs.length} ${SALAH_DISPLAY_NAMES[salah]} logs, ${verifyTotal[0].total} total\n` +
         `Classification: ${category ?? 'null'}\n` +
-        `AI reminder cached in SecureStore.\n` +
+        `AI reminder: ${aiResult ? 'cached' : 'generation failed; check Edge Function logs.'}\n` +
         `Notifications re-scheduled.\n\n` +
         `Tap ${SALAH_DISPLAY_NAMES[salah]} to test.`
       );

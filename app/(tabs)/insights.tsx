@@ -156,9 +156,7 @@ function buildChartPoints(
 
 function computeSalahInsights(
   allRows: { salahName: string; focusRating: number; distractions: string; loggedAt: number }[],
-  customLabelMap: Record<string, string>,
-  deletedLabelMap: Record<string, string>,
-  historicalLabelMap: Record<string, string>
+  labelMap: Record<string, string>
 ): SalahInsight[] {
   // Group rows by salah — rows are already in chronological order (asc loggedAt)
   const groups: Partial<Record<SalahName, typeof allRows>> = {};
@@ -191,7 +189,7 @@ function computeSalahInsights(
     }
     const topDistraction = topKey
       ? {
-          label: DISTRACTION_LABELS[topKey as DistractionKey] ?? customLabelMap[topKey] ?? deletedLabelMap[topKey] ?? historicalLabelMap[topKey] ?? 'Deleted distraction',
+          label: DISTRACTION_LABELS[topKey as DistractionKey] ?? labelMap[topKey] ?? 'Deleted distraction',
           pct: dTotal > 0 ? Math.round((topCount / dTotal) * 100) : 0,
         }
       : null;
@@ -672,16 +670,31 @@ export default function InsightsScreen() {
       } catch {}
     }
 
+    const labelMap: Record<string, string> = {};
+    const labelRegistryRow = db
+      .select()
+      .from(settings)
+      .where(eq(settings.key, 'custom_distraction_labels'))
+      .get();
+    if (labelRegistryRow) {
+      try {
+        const list = JSON.parse(labelRegistryRow.value) as { key: string; label: string }[];
+        for (const d of list) labelMap[d.key] = d.label;
+      } catch {}
+    }
+
+    Object.assign(labelMap, historicalLabelMap, deletedLabelMap, customLabelMap);
+
     const topDistractions = (Object.entries(dCounts) as [string, number][])
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3)
       .map(([key, n]) => ({
         key,
-        label: DISTRACTION_LABELS[key as DistractionKey] ?? customLabelMap[key] ?? deletedLabelMap[key] ?? historicalLabelMap[key] ?? 'Deleted distraction',
+        label: DISTRACTION_LABELS[key as DistractionKey] ?? labelMap[key] ?? 'Deleted distraction',
         pct: dTotal > 0 ? Math.round((n / dTotal) * 100) : 0,
       }));
 
-    const salahInsights = computeSalahInsights(allRows, customLabelMap, deletedLabelMap, historicalLabelMap);
+    const salahInsights = computeSalahInsights(allRows, labelMap);
 
     // Reminder effectiveness — all-time, all users (data collected regardless of tier)
     const effectRows = db
@@ -696,7 +709,7 @@ export default function InsightsScreen() {
       .all();
 
     const reminderEffectiveness: ReminderEffectivenessEntry[] = effectRows
-      .filter((r) => r.reminderType && Number(r.sampleCount) >= 3)
+      .filter((r) => r.reminderType && r.reminderType !== 'ai' && Number(r.sampleCount) >= 3)
       .map((r) => ({
         type: r.reminderType as ReminderType,
         label: REMINDER_TYPE_LABELS[r.reminderType as ReminderType] ?? r.reminderType ?? '',
