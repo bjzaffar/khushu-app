@@ -168,7 +168,14 @@ export async function refreshWidgetIfWeekChanged(): Promise<void> {
   const currentWeekStart = toISODate(getWeekStart());
   const lastWeekStart = await AsyncStorage.getItem(WIDGET_WEEK_KEY);
 
-  if (lastWeekStart === currentWeekStart) return;
+  if (lastWeekStart === currentWeekStart) {
+    // Android's native widget store is new to this build. Re-write the
+    // current week when the app opens so a newly added widget is populated.
+    if (Platform.OS === 'android') {
+      await writeWidgetData();
+    }
+    return;
+  }
 
   // New week (or first run) — rebuild and write
   await writeWidgetData();
