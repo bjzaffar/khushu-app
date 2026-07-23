@@ -45,6 +45,12 @@ class SalahHeatmapWidgetProvider : AppWidgetProvider() {
             val views = RemoteViews(context.packageName, R.layout.salah_heatmap_widget)
             val ratings = loadRatings(context)
 
+            // Updates can be re-applied to the current RemoteViews hierarchy.
+            // Clear both dynamic containers so each refresh renders exactly one
+            // header and one 5×7 grid from the latest widget data.
+            views.removeAllViews(R.id.widget_day_headers)
+            views.removeAllViews(R.id.widget_rows)
+
             DAY_LABELS.forEach { label ->
                 val dayView = RemoteViews(context.packageName, R.layout.salah_heatmap_widget_day)
                 dayView.setTextViewText(R.id.widget_day_label, label)

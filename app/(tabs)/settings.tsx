@@ -116,9 +116,14 @@ export default function SettingsScreen() {
     }, [])
   );
 
-  function recalcAndReschedule(method: CalculationMethodKey, madhab: AsrMadhab, mins: number) {
-    if (!location) return;
-    const pt = calculatePrayerTimes(location, new Date(), method, madhab);
+  function recalcAndReschedule(
+    method: CalculationMethodKey,
+    madhab: AsrMadhab,
+    mins: number,
+    coords = location
+  ) {
+    if (!coords) return;
+    const pt = calculatePrayerTimes(coords, new Date(), method, madhab);
     setTodaysPrayerTimes(pt);
     schedulePreSalahReminders(pt, mins);
   }
@@ -170,7 +175,7 @@ export default function SettingsScreen() {
         .onConflictDoUpdate({ target: settings.key, set: { value: String(coords.latitude) } }).run();
       db.insert(settings).values({ key: 'location_lng', value: String(coords.longitude) })
         .onConflictDoUpdate({ target: settings.key, set: { value: String(coords.longitude) } }).run();
-      recalcAndReschedule(calculationMethod, asrMadhab, reminderMinutesBefore);
+      recalcAndReschedule(calculationMethod, asrMadhab, reminderMinutesBefore, coords);
       setLocationStatus('done');
     } catch {
       setLocationStatus('error');

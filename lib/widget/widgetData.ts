@@ -51,7 +51,10 @@ function getWeekEnd(): Date {
 
 /** Format Date → YYYY-MM-DD */
 function toISODate(d: Date): string {
-  return d.toISOString().split('T')[0];
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 // ─── Data builder ─────────────────────────────────────────────────────────────
@@ -65,6 +68,10 @@ export function buildHeatmapData(): HeatmapData {
   const weekEnd = getWeekEnd();
   const weekStartStr = toISODate(weekStart);
   const weekEndStr = toISODate(weekEnd);
+  const queryStart = new Date(weekStart);
+  queryStart.setDate(queryStart.getDate() - 1);
+  const queryEnd = new Date(weekEnd);
+  queryEnd.setDate(queryEnd.getDate() + 1);
 
   // Query all logs for this week
   const logs = db
@@ -72,8 +79,8 @@ export function buildHeatmapData(): HeatmapData {
     .from(salahLogs)
     .where(
       and(
-        gte(salahLogs.logDate, weekStartStr),
-        lte(salahLogs.logDate, weekEndStr)
+        gte(salahLogs.logDate, toISODate(queryStart)),
+        lte(salahLogs.logDate, toISODate(queryEnd))
       )
     )
     .all();
@@ -81,7 +88,10 @@ export function buildHeatmapData(): HeatmapData {
   // Build a lookup: key = "YYYY-MM-DD|salahName" → rating
   const lookup = new Map<string, number>();
   for (const log of logs) {
-    lookup.set(`${log.logDate}|${log.salahName}`, log.focusRating);
+    const localLogDate = toISODate(new Date(log.loggedAt));
+    if (localLogDate >= weekStartStr && localLogDate <= weekEndStr) {
+      lookup.set(`${localLogDate}|${log.salahName}`, log.focusRating);
+    }
   }
 
   // Build 35 cells: 7 days × 5 prayers

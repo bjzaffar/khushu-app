@@ -93,6 +93,7 @@ export default function LogScreen() {
   const [relogSalah, setRelogSalah] = useState<SalahName | null>(null);
   const [deleteArchived, setDeleteArchived] = useState<{ key: string; label: string } | null>(null);
   const [todaysLogs, setTodaysLogs] = useState<Record<string, number>>({});
+  const [isRelogging, setIsRelogging] = useState(false);
 
   // Custom distraction state
   const [customDistractions, setCustomDistractions] = useState<{ key: string; label: string }[]>([]);
@@ -127,6 +128,7 @@ export default function LogScreen() {
       setOtherInputText('');
       setFocusRating(0);
       setSelectedDistractions([]);
+      setIsRelogging(false);
 
       // Load today's logs
       const today = new Date().toISOString().split('T')[0];
@@ -239,8 +241,14 @@ export default function LogScreen() {
     }
   }
 
+  const canSave = focusRating > 0 && (
+    focusRating === 5 || selectedDistractions.length > 0
+  );
+  const allSalahsLogged = SALAH_NAMES.every((name) => name in todaysLogs);
+  const showAllSalahsLogged = allSalahsLogged && !isRelogging;
+
   async function handleSave() {
-    if (focusRating === 0 || selectedDistractions.length === 0) return;
+    if (!canSave) return;
     const now = new Date();
 
     // Read which reminder style was shown before this Salah (if any)
@@ -343,6 +351,7 @@ export default function LogScreen() {
     setFocusRating(0);
     setSelectedDistractions([]);
     setSaved(false);
+    setIsRelogging(false);
     if (firstUnlogged) {
       setSelectedSalah(firstUnlogged);
     }
@@ -401,6 +410,7 @@ export default function LogScreen() {
             <View className="flex-row gap-x-2">
               {SALAH_NAMES.map((name) => {
                 const isLogged = name in todaysLogs;
+                const isSelected = !showAllSalahsLogged && selectedSalah === name;
                 return (
                   <Pressable
                     key={name}
@@ -412,12 +422,12 @@ export default function LogScreen() {
                       }
                     }}
                     className={`flex-1 py-2 rounded-xl items-center ${
-                      selectedSalah === name ? 'bg-sage-600' : 'bg-sand-200'
+                      isSelected ? 'bg-sage-600' : 'bg-sand-200'
                     }`}
                   >
                     <Text
                       className={`text-xs font-medium ${
-                        selectedSalah === name ? 'text-white' : 'text-ink-700'
+                        isSelected ? 'text-white' : 'text-ink-700'
                       }`}
                     >
                       {SALAH_DISPLAY_NAMES[name]}
@@ -429,6 +439,17 @@ export default function LogScreen() {
           </View>
 
           {/* ── Focus Rating ───────────────────────────────────────────────── */}
+          {showAllSalahsLogged ? (
+            <View className="items-center py-10 gap-y-4">
+              <View className="w-16 h-16 rounded-full bg-sage-600 items-center justify-center">
+                <Text className="text-white text-2xl font-semibold">{'\u2713'}</Text>
+              </View>
+              <Text className="text-ink-900 text-xl font-semibold text-center">
+                All the Salahs for today have been logged.
+              </Text>
+            </View>
+          ) : (
+            <>
           <View className="mb-6">
             <Text className="text-xs font-medium text-ink-300 uppercase tracking-widest mb-3">
               Focus Rating
@@ -673,19 +694,21 @@ export default function LogScreen() {
           {/* ── Save Button ───────────────────────────────────────────────── */}
           <Pressable
             onPress={handleSave}
-            disabled={focusRating === 0 || selectedDistractions.length === 0}
+            disabled={!canSave}
             className={`py-4 rounded-2xl items-center ${
-              focusRating > 0 && selectedDistractions.length > 0 ? 'bg-sage-600 active:bg-sage-700' : 'bg-sand-200'
+              canSave ? 'bg-sage-600 active:bg-sage-700' : 'bg-sand-200'
             }`}
           >
             <Text
               className={`font-semibold text-base ${
-                focusRating > 0 && selectedDistractions.length > 0 ? 'text-white' : 'text-ink-300'
+                canSave ? 'text-white' : 'text-ink-300'
               }`}
             >
               Save Reflection
             </Text>
           </Pressable>
+            </>
+          )}
         </ScrollView>
       </SafeAreaView>
 
@@ -709,7 +732,10 @@ export default function LogScreen() {
               </Pressable>
               <Pressable
                 onPress={() => {
-                  if (relogSalah) setSelectedSalah(relogSalah);
+                  if (relogSalah) {
+                    setSelectedSalah(relogSalah);
+                    setIsRelogging(true);
+                  }
                   setRelogSalah(null);
                 }}
                 className="flex-1 py-3 rounded-2xl bg-sage-600 items-center"
