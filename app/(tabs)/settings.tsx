@@ -11,6 +11,7 @@ import { getDeviceLocation } from '@/lib/location/deviceLocation';
 import { router } from 'expo-router';
 import { supabase } from '@/lib/supabase/client';
 import { clearLogsEverywhere } from '@/lib/supabase/sync';
+import { writeWidgetData } from '@/lib/widget/widgetData';
 import { db } from '@/db/database';
 import { settings } from '@/db/schema';
 import { calculatePrayerTimes } from '@/lib/prayer/prayerTimes';
@@ -245,6 +246,10 @@ export default function SettingsScreen() {
       await clearLogsEverywhere();
     } catch (error) {
       console.warn('[sync] salah_logs deletion queued for retry:', error);
+    } finally {
+      // The widget has its own persisted heatmap, so rebuild it after the
+      // local database is cleared even when the cloud deletion is queued.
+      await writeWidgetData();
     }
   }
 

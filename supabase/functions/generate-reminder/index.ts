@@ -150,7 +150,7 @@ Write ONE sentence (max 25 words) that:
 4. Matches the tone and avoids what's listed
 5. If naming an attribute, include a concise English translation of the name in brackets directly after
 
-Return ONLY the reminder text, with no quotes or formatting. If quoting a hadith or ayah, DO NOT alter any text within that specific quote`,
+Return ONLY the reminder text, with no quotes or formatting. If quoting a hadith or ayah, DO NOT alter any text within that specific quote, and quote the entire ayah/hadith with the reference included.`,
           },
         ],
       }),
