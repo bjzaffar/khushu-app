@@ -25,6 +25,7 @@ export interface HeatmapData {
   cells: HeatmapCell[];
   weekStart: string; // ISO date YYYY-MM-DD of Monday
   weekEnd: string;   // ISO date YYYY-MM-DD of Sunday
+  isPremium: boolean;
 }
 
 // ─── Week helpers ─────────────────────────────────────────────────────────────
@@ -63,7 +64,7 @@ function toISODate(d: Date): string {
  * Build the 35-cell heatmap data for the current week (Mon–Sun).
  * Queries SQLite for salah_logs in the week's date range.
  */
-export function buildHeatmapData(): HeatmapData {
+export function buildHeatmapData(isPremium: boolean): HeatmapData {
   const weekStart = getWeekStart();
   const weekEnd = getWeekEnd();
   const weekStartStr = toISODate(weekStart);
@@ -113,6 +114,7 @@ export function buildHeatmapData(): HeatmapData {
     cells,
     weekStart: weekStartStr,
     weekEnd: weekEndStr,
+    isPremium,
   };
 }
 
@@ -121,11 +123,11 @@ export function buildHeatmapData(): HeatmapData {
 /**
  * Write heatmap data to shared storage.
  * - Android: Writes to SharedPreferences via native module, then refreshes widget
- * - iOS: Writes to AsyncStorage (App Group bridge TBD when extension is configured)
+ * - iOS: Writes to the App Group when the native WidgetBridge is available
  * - Fallback: AsyncStorage for Expo Go / development
  */
-export async function writeWidgetData(): Promise<void> {
-  const data = buildHeatmapData();
+export async function writeWidgetData(isPremium: boolean): Promise<void> {
+  const data = buildHeatmapData(isPremium);
   const json = JSON.stringify(data);
 
   // Always persist to AsyncStorage for in-app reads
@@ -136,18 +138,17 @@ export async function writeWidgetData(): Promise<void> {
     try {
       const { WidgetDataModule } = NativeModules;
       if (WidgetDataModule?.writeHeatmapData) {
-        WidgetDataModule.writeHeatmapData(json);
+        WidgetDataModule.writeHeatmapData(json, isPremium);
       }
     } catch {
       // Native module not available (Expo Go) — widget won't update
     }
   } else if (Platform.OS === 'ios') {
     try {
-      // TODO: Write to App Group shared container when extension is configured
-      // const { WidgetBridge } = NativeModules;
-      // if (WidgetBridge?.writeToAppGroup) {
-      //   WidgetBridge.writeToAppGroup(WIDGET_DATA_KEY, json);
-      // }
+      const { WidgetBridge } = NativeModules;
+      if (WidgetBridge?.writeToAppGroup) {
+        WidgetBridge.writeToAppGroup(WIDGET_DATA_KEY, json);
+      }
     } catch {
       // Native module not available
     }
@@ -174,7 +175,7 @@ export async function readWidgetData(): Promise<HeatmapData | null> {
  * If so, rebuild and write fresh widget data.
  * Call on app startup to handle Monday rollover.
  */
-export async function refreshWidgetIfWeekChanged(): Promise<void> {
+export async function refreshWidgetIfWeekChanged(isPremium: boolean): Promise<void> {
   const currentWeekStart = toISODate(getWeekStart());
   const lastWeekStart = await AsyncStorage.getItem(WIDGET_WEEK_KEY);
 
@@ -182,12 +183,12 @@ export async function refreshWidgetIfWeekChanged(): Promise<void> {
     // Android's native widget store is new to this build. Re-write the
     // current week when the app opens so a newly added widget is populated.
     if (Platform.OS === 'android') {
-      await writeWidgetData();
+      await writeWidgetData(isPremium);
     }
     return;
   }
 
   // New week (or first run) — rebuild and write
-  await writeWidgetData();
+  await writeWidgetData(isPremium);
   await AsyncStorage.setItem(WIDGET_WEEK_KEY, currentWeekStart);
 }

@@ -9,6 +9,7 @@ import { useAppStore } from '@/store/appStore';
 import { classifyDistraction, generateAIReminder } from '@/lib/notifications/reminderContent';
 import { queueLogUpsert } from '@/lib/supabase/sync';
 import { schedulePreSalahReminders } from '@/lib/notifications/notificationService';
+import { writeWidgetData } from '@/lib/widget/widgetData';
 import {
   SALAH_NAMES,
   SALAH_DISPLAY_NAMES,
@@ -19,6 +20,8 @@ import {
 
 const DAY = 86_400_000;
 const DEFAULT_DISTRACTION_KEYS = Object.keys(DISTRACTION_LABELS) as DistractionKey[];
+const debugPremiumOverrideKey = (userId: string | null) =>
+  `debug_premium_override_${userId ?? 'anonymous'}`;
 
 function saveSetting(key: string, value: string) {
   db.insert(settings)
@@ -57,6 +60,14 @@ export default function DebugScreen() {
   const [statusMsg, setStatusMsg] = useState('');
   const [showSalahPicker, setShowSalahPicker] = useState(false);
   const [defaultDistraction, setDefaultDistraction] = useState<DistractionKey>('work');
+
+  function handlePremiumChange(enabled: boolean) {
+    saveSetting(debugPremiumOverrideKey(userId), enabled ? 'true' : 'false');
+    setPremiumStatus(enabled ? 'premium' : 'free');
+    writeWidgetData(enabled).catch((err) =>
+      console.warn('[widget] premium access update failed:', err)
+    );
+  }
 
   async function handleSeedDefaultDistraction() {
     const now = Date.now();
@@ -280,7 +291,7 @@ export default function DebugScreen() {
             </View>
             <Switch
               value={premiumStatus === 'premium'}
-              onValueChange={(enabled) => setPremiumStatus(enabled ? 'premium' : 'free')}
+              onValueChange={handlePremiumChange}
               trackColor={{ false: '#DED7CD', true: '#82A882' }}
               thumbColor="#FFFFFF"
             />

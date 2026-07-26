@@ -6,6 +6,7 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.view.View
 import android.widget.RemoteViews
 import org.json.JSONObject
@@ -20,6 +21,7 @@ class SalahHeatmapWidgetProvider : AppWidgetProvider() {
     companion object {
         const val PREFERENCES_NAME = "khushu_widget"
         const val HEATMAP_DATA_KEY = "widget_heatmap_data"
+        const val IS_PREMIUM_KEY = "widget_is_premium"
 
         private val DAY_LABELS = listOf("M", "T", "W", "T", "F", "S", "S")
         private val SALAH_LABELS = listOf("Fajr", "Dhuhr", "Asr", "Maghrib", "Isha")
@@ -42,6 +44,11 @@ class SalahHeatmapWidgetProvider : AppWidgetProvider() {
         }
 
         private fun createRemoteViews(context: Context): RemoteViews {
+            val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+            if (!preferences.getBoolean(IS_PREMIUM_KEY, false)) {
+                return createLockedRemoteViews(context)
+            }
+
             val views = RemoteViews(context.packageName, R.layout.salah_heatmap_widget)
             val ratings = loadRatings(context)
 
@@ -79,15 +86,31 @@ class SalahHeatmapWidgetProvider : AppWidgetProvider() {
                 views.addView(R.id.widget_rows, rowView)
             }
 
-            val launchIntent = Intent(context, MainActivity::class.java)
-            val launchPendingIntent = PendingIntent.getActivity(
+            views.setOnClickPendingIntent(R.id.widget_root, createLaunchPendingIntent(context, null))
+            return views
+        }
+
+        private fun createLockedRemoteViews(context: Context): RemoteViews {
+            val views = RemoteViews(context.packageName, R.layout.salah_heatmap_widget_locked)
+            views.setOnClickPendingIntent(R.id.widget_root, createLaunchPendingIntent(context, "khushuai://paywall"))
+            return views
+        }
+
+        private fun createLaunchPendingIntent(context: Context, destination: String?): PendingIntent {
+            val intent = if (destination == null) {
+                Intent(context, MainActivity::class.java)
+            } else {
+                Intent(Intent.ACTION_VIEW, Uri.parse(destination), context, MainActivity::class.java)
+            }.apply {
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+
+            return PendingIntent.getActivity(
                 context,
-                0,
-                launchIntent,
+                if (destination == null) 0 else 1,
+                intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
-            views.setOnClickPendingIntent(R.id.widget_root, launchPendingIntent)
-            return views
         }
 
         private fun loadRatings(context: Context): List<Int?> {

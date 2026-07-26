@@ -29,6 +29,7 @@ import { getCurrentSalahWindow } from '@/lib/prayer/prayerTimes';
 import { cancelPostSalahForSalah, cancelReEngagementNotification } from '@/lib/notifications/notificationService';
 import { classifyDistraction, generateAIReminder } from '@/lib/notifications/reminderContent';
 import { writeWidgetData } from '@/lib/widget/widgetData';
+import { archiveActiveCustomDistractions } from '@/lib/customDistractions';
 
 // Built-in keys excluding 'other' (rendered separately)
 const BUILTIN_DISTRACTION_KEYS = Object.keys(DISTRACTION_LABELS).filter(
@@ -59,7 +60,7 @@ function getSettingJSON(key: string): unknown[] {
 
 export default function LogScreen() {
   const params = useLocalSearchParams<{ salah?: string; fromSalahMode?: string }>();
-  const { todaysPrayerTimes, userId } = useAppStore();
+  const { todaysPrayerTimes, userId, premiumStatus } = useAppStore();
   const isPremium = useAppStore(selectIsPremium);
 
   function resolveInitialSalah(): SalahName {
@@ -117,6 +118,16 @@ export default function LogScreen() {
       try { setHiddenBuiltins(JSON.parse(hiddenRow.value)); } catch {}
     }
   }, []);
+
+  // The root layout archives on downgrade. Mirror that change into this
+  // mounted tab immediately so free users cannot keep selecting old customs.
+  useEffect(() => {
+    if (premiumStatus !== 'free') return;
+    archiveActiveCustomDistractions();
+    setCustomDistractions([]);
+    setSelectedDistractions((current) => current.filter((key) => !key.startsWith('custom_')));
+    setEditMode(false);
+  }, [premiumStatus]);
 
   // When screen gains focus, always open on first unlogged salah.
   // If navigation params carry a new intent (salah mode / notification),
@@ -323,7 +334,7 @@ export default function LogScreen() {
     );
 
     // Fire-and-forget widget data update
-    writeWidgetData().catch((err) =>
+    writeWidgetData(isPremium).catch((err) =>
       console.warn('[widget] writeWidgetData failed:', err)
     );
 

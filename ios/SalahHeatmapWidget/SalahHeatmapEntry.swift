@@ -5,6 +5,7 @@ struct SalahHeatmapEntry: TimelineEntry {
     let cells: [HeatmapCell]
     let weekStart: String
     let weekEnd: String
+    let isPremium: Bool
 }
 
 struct HeatmapCell: Codable {
@@ -17,4 +18,5 @@ struct HeatmapData: Codable {
     let cells: [HeatmapCell]
     let weekStart: String
     let weekEnd: String
+    let isPremium: Bool?
 }

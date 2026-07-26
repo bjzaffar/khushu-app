@@ -9,11 +9,12 @@ class WidgetDataModule(reactContext: ReactApplicationContext) : ReactContextBase
     override fun getName() = "WidgetDataModule"
 
     @ReactMethod
-    fun writeHeatmapData(json: String) {
+    fun writeHeatmapData(json: String, isPremium: Boolean) {
         reactApplicationContext
             .getSharedPreferences(SalahHeatmapWidgetProvider.PREFERENCES_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(SalahHeatmapWidgetProvider.HEATMAP_DATA_KEY, json)
+            .putBoolean(SalahHeatmapWidgetProvider.IS_PREMIUM_KEY, isPremium)
             .apply()
 
         SalahHeatmapWidgetProvider.updateAll(reactApplicationContext)

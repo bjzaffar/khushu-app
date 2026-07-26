@@ -10,7 +10,8 @@ struct SalahHeatmapProvider: TimelineProvider {
             date: Date(),
             cells: placeholderCells,
             weekStart: "",
-            weekEnd: ""
+            weekEnd: "",
+            isPremium: false
         )
     }
 
@@ -44,14 +45,15 @@ struct SalahHeatmapProvider: TimelineProvider {
             let emptyCells = (0..<35).map { _ in
                 HeatmapCell(day: "", salah: "", rating: nil)
             }
-            return SalahHeatmapEntry(date: Date(), cells: emptyCells, weekStart: "", weekEnd: "")
+            return SalahHeatmapEntry(date: Date(), cells: emptyCells, weekStart: "", weekEnd: "", isPremium: false)
         }
 
         return SalahHeatmapEntry(
             date: Date(),
             cells: data.cells,
             weekStart: data.weekStart,
-            weekEnd: data.weekEnd
+            weekEnd: data.weekEnd,
+            isPremium: data.isPremium ?? false
         )
     }
 }
@@ -75,8 +77,23 @@ struct SalahHeatmapWidgetEntryView: View {
     var body: some View {
         ZStack {
             Color.white
-            SalahHeatmapView(cells: entry.cells)
-                .padding(8)
+            if entry.isPremium {
+                SalahHeatmapView(cells: entry.cells)
+                    .padding(8)
+            } else {
+                Link(destination: URL(string: "khushuai://paywall")!) {
+                    VStack(spacing: 8) {
+                        Text("Prayer Heatmap")
+                            .font(.headline)
+                            .foregroundStyle(Color(red: 0.31, green: 0.28, blue: 0.26))
+                        Text("Premium feature\nTap to unlock")
+                            .font(.subheadline)
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(Color(red: 0.44, green: 0.42, blue: 0.42))
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
         }
         .containerBackground(.fill, for: .widget)
     }

@@ -3,12 +3,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
 export default function PaywallScreen() {
+  const returnHome = () => router.replace('/(tabs)');
+
   return (
     <SafeAreaView className="flex-1 bg-sand-100">
       <ScrollView className="flex-1 px-6 pt-6" contentContainerStyle={{ paddingBottom: 40 }}>
 
         {/* Close */}
-        <Pressable onPress={() => router.back()} className="self-end mb-4 p-2 active:opacity-60">
+        <Pressable onPress={returnHome} className="self-end mb-4 p-2 active:opacity-60">
           <Text className="text-ink-300 text-sm">Close</Text>
         </Pressable>
 
@@ -46,7 +48,7 @@ export default function PaywallScreen() {
           className="bg-sage-600 py-4 rounded-2xl items-center mb-3 active:bg-sage-700"
           onPress={() => {
             // TODO Step 5: purchasePremium() via RevenueCat
-            router.back();
+            returnHome();
           }}
         >
           <Text className="text-white font-semibold text-base">Subscribe — coming soon</Text>
@@ -56,7 +58,7 @@ export default function PaywallScreen() {
           className="items-center py-3 active:opacity-60"
           onPress={() => {
             // TODO Step 5: restorePurchases()
-            router.back();
+            returnHome();
           }}
         >
           <Text className="text-ink-300 text-sm">Restore purchases</Text>

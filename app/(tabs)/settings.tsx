@@ -249,7 +249,7 @@ export default function SettingsScreen() {
     } finally {
       // The widget has its own persisted heatmap, so rebuild it after the
       // local database is cleared even when the cloud deletion is queued.
-      await writeWidgetData();
+      await writeWidgetData(isPremium);
     }
   }
 

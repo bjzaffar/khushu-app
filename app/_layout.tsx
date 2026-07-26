@@ -1,5 +1,5 @@
 import '../global.css';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View, Text } from 'react-native';
 import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -27,9 +27,13 @@ import type { SalahName, CalculationMethodKey, AsrMadhab } from '@/types';
 import { supabase } from '@/lib/supabase/client';
 import { syncLogsFromCloud } from '@/lib/supabase/sync';
 import NetInfo from '@react-native-community/netinfo';
-import { refreshWidgetIfWeekChanged } from '@/lib/widget/widgetData';
+import { refreshWidgetIfWeekChanged, writeWidgetData } from '@/lib/widget/widgetData';
 import { setPendingUrl } from '@/lib/deeplink';
 import * as Linking from 'expo-linking';
+import { archiveActiveCustomDistractions } from '@/lib/customDistractions';
+
+const debugPremiumOverrideKey = (userId: string | null) =>
+  `debug_premium_override_${userId ?? 'anonymous'}`;
 
 // Capture the deep link URL IMMEDIATELY at module scope — before any async init blocks the navigator.
 // Without this, release builds lose the URL because the callback screen can't mount until
@@ -55,8 +59,11 @@ export default function RootLayout() {
     startSalahMode,
     setUserId,
     setPremiumStatus,
+    premiumStatus,
+    isDbReady,
   } = useAppStore();
   const [initError, setInitError] = useState<string | null>(null);
+  const wasPremiumRef = useRef(false);
 
   useEffect(() => {
     async function setup() {
@@ -78,6 +85,17 @@ export default function RootLayout() {
           syncLogsFromCloud(session.user.id).catch((error) =>
             console.warn('[supabase] startup log sync failed:', error)
           );
+        }
+
+        // Preserve the Debug-page entitlement override for this account across
+        // restarts. A production RevenueCat refresh can still replace it later.
+        const debugPremiumOverride = db
+          .select()
+          .from(settings)
+          .where(eq(settings.key, debugPremiumOverrideKey(session?.user?.id ?? null)))
+          .get();
+        if (debugPremiumOverride) {
+          setPremiumStatus(debugPremiumOverride.value === 'true' ? 'premium' : 'free');
         }
 
         // Rehydrate notification settings
@@ -132,7 +150,7 @@ export default function RootLayout() {
         await scheduleWeeklySummaryNotification(weekCountRow?.n ?? 0);
 
         // Refresh widget data if the week has rolled over (Monday 00:00+)
-        refreshWidgetIfWeekChanged().catch((err) =>
+        refreshWidgetIfWeekChanged(false).catch((err) =>
           console.warn('[widget] refreshWidgetIfWeekChanged failed:', err)
         );
 
@@ -150,7 +168,22 @@ export default function RootLayout() {
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setUserId(session?.user?.id ?? null);
-      if (!session?.user) setPremiumStatus('free');
+      try {
+        const debugPremiumOverride = db
+          .select()
+          .from(settings)
+          .where(eq(settings.key, debugPremiumOverrideKey(session?.user?.id ?? null)))
+          .get();
+        if (debugPremiumOverride) {
+          setPremiumStatus(debugPremiumOverride.value === 'true' ? 'premium' : 'free');
+        } else if (!session?.user) {
+          setPremiumStatus('free');
+        }
+      } catch {
+        // The startup callback can arrive before SQLite is initialized.
+        // setup() restores the override as soon as initialization completes.
+        setPremiumStatus('free');
+      }
       if (session?.user && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
         // Supabase invokes this callback while holding its auth lock. Calling auth APIs
         // from an async callback can deadlock setSession(), including recovery links.
@@ -165,6 +198,24 @@ export default function RootLayout() {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  // Widgets run outside React Native, so mirror every entitlement transition
+  // into native shared storage. Unknown access is deliberately locked.
+  useEffect(() => {
+    if (!isDbReady) return;
+    writeWidgetData(premiumStatus === 'premium').catch((err) =>
+      console.warn('[widget] premium access sync failed:', err)
+    );
+  }, [isDbReady, premiumStatus]);
+
+  // Downgrading removes custom distractions from new logging, but keeps their
+  // labels and every historical log intact for Insights and later reactivation.
+  useEffect(() => {
+    if (wasPremiumRef.current && premiumStatus === 'free') {
+      archiveActiveCustomDistractions();
+    }
+    wasPremiumRef.current = premiumStatus === 'premium';
+  }, [premiumStatus]);
 
   // Flush offline saves as soon as the device regains an internet connection.
   useEffect(() => {
