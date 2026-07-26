@@ -16,7 +16,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { eq, and } from 'drizzle-orm';
 import { db } from '@/db/database';
 import { salahLogs, settings } from '@/db/schema';
-import { useAppStore } from '@/store/appStore';
+import { selectIsPremium, useAppStore } from '@/store/appStore';
 import { queueClassificationUpdate, queueLogUpsert } from '@/lib/supabase/sync';
 import {
   SALAH_NAMES,
@@ -59,7 +59,8 @@ function getSettingJSON(key: string): unknown[] {
 
 export default function LogScreen() {
   const params = useLocalSearchParams<{ salah?: string; fromSalahMode?: string }>();
-  const { todaysPrayerTimes, isPremium, userId } = useAppStore();
+  const { todaysPrayerTimes, userId } = useAppStore();
+  const isPremium = useAppStore(selectIsPremium);
 
   function resolveInitialSalah(): SalahName {
     if (params.salah && SALAH_NAMES.includes(params.salah as SalahName)) {
@@ -756,7 +757,7 @@ export default function LogScreen() {
             </Text>
             <Text className="text-ink-400 text-sm text-center mb-6">
               {deleteArchived ? `"${deleteArchived.label}" will be permanently deleted.` : ''}
-              {'\n'}It won't be available when logging new reflections.
+              {'\n'}It won&apos;t be available when logging new reflections.
             </Text>
             <View className="flex-row gap-x-3">
               <Pressable

@@ -1,4 +1,4 @@
-import { View, Text, TextInput, Pressable, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, ActivityIndicator, Alert, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useState } from 'react';
 import { router } from 'expo-router';
@@ -9,9 +9,16 @@ import { useAppStore } from '@/store/appStore';
 import { classifyDistraction, generateAIReminder } from '@/lib/notifications/reminderContent';
 import { queueLogUpsert } from '@/lib/supabase/sync';
 import { schedulePreSalahReminders } from '@/lib/notifications/notificationService';
-import { SALAH_NAMES, SALAH_DISPLAY_NAMES, type SalahName } from '@/types';
+import {
+  SALAH_NAMES,
+  SALAH_DISPLAY_NAMES,
+  DISTRACTION_LABELS,
+  type SalahName,
+  type DistractionKey,
+} from '@/types';
 
 const DAY = 86_400_000;
+const DEFAULT_DISTRACTION_KEYS = Object.keys(DISTRACTION_LABELS) as DistractionKey[];
 
 function saveSetting(key: string, value: string) {
   db.insert(settings)
@@ -40,6 +47,8 @@ export default function DebugScreen() {
     asrMadhab,
     reminderMinutesBefore,
     userId,
+    premiumStatus,
+    setPremiumStatus,
   } = useAppStore();
 
   const [salah, setSalah] = useState<SalahName>('fajr');
@@ -47,6 +56,46 @@ export default function DebugScreen() {
   const [status, setStatus] = useState<StatusStep>('idle');
   const [statusMsg, setStatusMsg] = useState('');
   const [showSalahPicker, setShowSalahPicker] = useState(false);
+  const [defaultDistraction, setDefaultDistraction] = useState<DistractionKey>('work');
+
+  async function handleSeedDefaultDistraction() {
+    const now = Date.now();
+    const debugMarker = `__debug_default_${defaultDistraction}_${now}`;
+    const otherSalahs = SALAH_NAMES.filter((name) => name !== salah);
+
+    try {
+      setStatus('seeding');
+      setStatusMsg('Inserting simulated logsâ€¦');
+
+      // Six logs for the selected Salah, plus four for the remaining Salahs.
+      // These are deliberately plain logs: no AI classification or reminder generation.
+      for (let i = 1; i <= 10; i++) {
+        const ts = now - i * DAY;
+        const date = new Date(ts).toISOString().split('T')[0];
+        await db.insert(salahLogs).values({
+          salahName: i <= 6 ? salah : otherSalahs[(i - 7) % otherSalahs.length],
+          focusRating: i <= 6 ? 2 : 3,
+          distractions: defaultDistraction,
+          loggedAt: ts,
+          logDate: date,
+          fromSalahMode: false,
+          reminderType: 'short',
+          reflectionText: debugMarker,
+        });
+      }
+
+      const total = db.select({ total: count() }).from(salahLogs).get();
+      setStatus('done');
+      setStatusMsg(
+        `Created 10 simulated logs for ${DISTRACTION_LABELS[defaultDistraction]}.\n` +
+        `No AI reminder was generated.\n\n` +
+        `Total logs: ${total?.total ?? 0}`
+      );
+    } catch (e) {
+      setStatus('error');
+      setStatusMsg(`Error: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
 
   async function handleSeed() {
     const trimmed = label.trim();
@@ -185,9 +234,9 @@ export default function DebugScreen() {
   }
 
   function handleClear() {
-    // Delete ALL debug-seeded logs (any distraction starting with 'custom_')
+    // Delete only logs created by the debug tools.
     const deleted = db.delete(salahLogs)
-      .where(like(salahLogs.distractions, 'custom_%'))
+      .where(like(salahLogs.reflectionText, '__debug_%'))
       .run();
 
     // Remove ALL custom distractions from settings
@@ -216,6 +265,26 @@ export default function DebugScreen() {
           <Pressable onPress={() => router.back()} className="px-3 py-1">
             <Text className="text-sage-600 text-sm font-medium">Close</Text>
           </Pressable>
+        </View>
+
+        <View className="mb-5">
+          <Text className="text-xs font-medium text-ink-300 uppercase tracking-widest mb-3">
+            Premium access
+          </Text>
+          <View className="bg-white rounded-2xl border border-sand-200 px-5 py-4 flex-row items-center justify-between">
+            <View className="flex-1 mr-4">
+              <Text className="text-ink-700 font-medium text-sm">Enable Premium</Text>
+              <Text className="text-ink-300 text-xs mt-1">
+                Development override for testing premium features.
+              </Text>
+            </View>
+            <Switch
+              value={premiumStatus === 'premium'}
+              onValueChange={(enabled) => setPremiumStatus(enabled ? 'premium' : 'free')}
+              trackColor={{ false: '#DED7CD', true: '#82A882' }}
+              thumbColor="#FFFFFF"
+            />
+          </View>
         </View>
 
         {/* Salah Picker */}
@@ -273,6 +342,40 @@ export default function DebugScreen() {
             className="bg-white rounded-2xl border border-sand-200 px-5 py-4 text-ink-700 text-sm"
             autoCapitalize="none"
           />
+        </View>
+
+        {/* Default Distraction Simulator */}
+        <View className="mb-5">
+          <Text className="text-xs font-medium text-ink-300 uppercase tracking-widest mb-3">
+            Simulated default distraction
+          </Text>
+          <View className="flex-row flex-wrap gap-2 mb-3">
+            {DEFAULT_DISTRACTION_KEYS.map((key) => {
+              const selected = defaultDistraction === key;
+              return (
+                <Pressable
+                  key={key}
+                  onPress={() => setDefaultDistraction(key)}
+                  className={`rounded-full border px-3 py-2 ${
+                    selected ? 'bg-sage-600 border-sage-600' : 'bg-white border-sand-200'
+                  }`}
+                >
+                  <Text className={`text-xs font-medium ${selected ? 'text-white' : 'text-ink-700'}`}>
+                    {DISTRACTION_LABELS[key]}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Pressable
+            onPress={handleSeedDefaultDistraction}
+            disabled={status === 'seeding' || status === 'classifying' || status === 'generating' || status === 'scheduling'}
+            className="bg-white rounded-2xl border border-sage-600 px-5 py-4 active:bg-sage-50"
+          >
+            <Text className="text-sage-600 font-medium text-sm">
+              Create Simulated Logs (No AI Reminder)
+            </Text>
+          </Pressable>
         </View>
 
         {/* Seed Button */}

@@ -34,7 +34,7 @@ export default function AccountScreen() {
   const { from } = useLocalSearchParams<{ from?: string }>();
   const isFromSettings = from === 'settings';
 
-  const { setHasCompletedOnboarding, setUserId, setIsPremium } = useAppStore();
+  const { setHasCompletedOnboarding, setUserId } = useAppStore();
 
   const [tab, setTab]         = useState<Tab>('signin');
   const [email, setEmail]     = useState('');
@@ -60,7 +60,6 @@ export default function AccountScreen() {
 
   async function onAuthSuccess(userId: string) {
     setUserId(userId);
-    setIsPremium(true);
     // Make the authenticated user's SQLite cache match Supabase before they
     // return to the app. Offline sessions retain their current local cache
     // until the connectivity listener can complete this refresh.
@@ -266,7 +265,7 @@ export default function AccountScreen() {
                   >
                     {status === 'loading'
                       ? <ActivityIndicator color="#FFFFFF" />
-                      : <Text className="text-white font-semibold text-base">I've confirmed my email</Text>
+                      : <Text className="text-white font-semibold text-base">I&apos;ve confirmed my email</Text>
                     }
                   </Pressable>
                   <Pressable

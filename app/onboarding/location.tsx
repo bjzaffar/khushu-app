@@ -56,7 +56,7 @@ export default function OnboardingLocation() {
             Prayer times for your location
           </Text>
           <Text className="text-ink-300 text-sm text-center leading-relaxed mt-2">
-            Khushu App calculates your prayer times locally using your device's GPS — no data leaves your device.
+            Khushu App calculates your prayer times locally using your device&apos;s GPS — no data leaves your device.
           </Text>
         </View>
 

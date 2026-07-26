@@ -2,7 +2,7 @@ import { View, Text, Pressable, StatusBar, Platform, NativeModules } from 'react
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { useKeepAwake } from 'expo-keep-awake';
-import { useAppStore } from '@/store/appStore';
+import { selectIsPremium, useAppStore } from '@/store/appStore';
 import { SALAH_DISPLAY_NAMES } from '@/types';
 import { getPatternForSalah } from '@/lib/patterns/patternEngine';
 import { getReminderContent } from '@/lib/notifications/reminderContent';
@@ -12,7 +12,8 @@ type Step = 'loading' | 'reminder' | 'active';
 export default function SalahModeScreen() {
   useKeepAwake();
 
-  const { activeSalah, endSalahMode, dndDuringSalah, isPremium } = useAppStore();
+  const { activeSalah, endSalahMode, dndDuringSalah } = useAppStore();
+  const isPremium = useAppStore(selectIsPremium);
   const salahDisplayName = activeSalah ? SALAH_DISPLAY_NAMES[activeSalah] : 'Salah';
   const previousRingerMode = useRef<0 | 1 | 2 | null>(null);
 

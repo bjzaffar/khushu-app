@@ -6,7 +6,7 @@ import { useScrollToTop } from '@react-navigation/native';
 import { eq } from 'drizzle-orm';
 import { salahLogs } from '@/db/schema';
 import * as Location from 'expo-location';
-import { useAppStore } from '@/store/appStore';
+import { selectIsPremium, useAppStore } from '@/store/appStore';
 import { getDeviceLocation } from '@/lib/location/deviceLocation';
 import { router } from 'expo-router';
 import { supabase } from '@/lib/supabase/client';
@@ -65,10 +65,10 @@ export default function SettingsScreen() {
     location,
     setTodaysPrayerTimes,
     userId,
-    isPremium,
     setUserId,
-    setIsPremium,
+    setPremiumStatus,
   } = useAppStore();
+  const isPremium = useAppStore(selectIsPremium);
 
   const [autoDetectStatus, setAutoDetectStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
   const [wheelActive, setWheelActive] = useState(false);
@@ -220,7 +220,7 @@ export default function SettingsScreen() {
     setShowSignOutModal(false);
     await supabase.auth.signOut();
     setUserId(null);
-    setIsPremium(false);
+    setPremiumStatus('free');
   }
 
   async function confirmDeleteAccount() {
@@ -230,7 +230,7 @@ export default function SettingsScreen() {
       await supabase.rpc('delete_user');
       await supabase.auth.signOut();
       setUserId(null);
-      setIsPremium(false);
+      setPremiumStatus('free');
     } catch {
       // silent — user will see auth state change
     }
@@ -316,7 +316,7 @@ export default function SettingsScreen() {
               <View className="flex-1 pr-4">
                 <Text className="text-ink-700 font-medium text-sm">Post-Salah prompt</Text>
                 <Text className="text-ink-300 text-xs mt-0.5">
-                  Remind me to log if I haven't after the prayer window closes.
+                  Remind me to log if I haven&apos;t after the prayer window closes.
                 </Text>
               </View>
               <Switch
@@ -454,7 +454,7 @@ export default function SettingsScreen() {
                   Earlier Asr
                 </Text>
                 <Text className={`text-xs mt-0.5 text-center ${asrMadhab === 'Shafi' ? 'text-white opacity-80' : 'text-ink-300'}`}>
-                  Shafi'i, Maliki & Hanbali
+                  Shafi&apos;i, Maliki & Hanbali
                 </Text>
               </Pressable>
               <Pressable

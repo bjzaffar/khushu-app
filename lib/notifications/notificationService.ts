@@ -6,6 +6,7 @@ import { getPatternForSalah } from '@/lib/patterns/patternEngine';
 import { getReminderContent } from '@/lib/notifications/reminderContent';
 import { db } from '@/db/database';
 import { settings } from '@/db/schema';
+import { selectIsPremium, useAppStore } from '@/store/appStore';
 
 // Show notifications when app is in the foreground
 Notifications.setNotificationHandler({
@@ -49,7 +50,7 @@ export async function schedulePreSalahReminders(
     const triggerTime = new Date(prayerTimes[salah].getTime() - minutesBefore * 60_000);
     if (triggerTime <= now) continue;
 
-    const isPremium = (await import('@/store/appStore')).useAppStore.getState().isPremium;
+    const isPremium = selectIsPremium(useAppStore.getState());
     const pattern = await getPatternForSalah(salah, isPremium ? undefined : 7);
     const { text: body, type: reminderType } = getReminderContent(pattern);
 

@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import type { Location, PrayerTimes, SalahName, CalculationMethodKey, AsrMadhab } from '@/types';
 
+export type PremiumStatus = 'unknown' | 'free' | 'premium';
+
 interface AppState {
   // ── Hydration ──────────────────────────────────────────────────────────────
   isHydrated: boolean;
@@ -46,8 +48,8 @@ interface AppState {
   // ── Auth & Premium ────────────────────────────────────────────────────────────
   userId: string | null;
   setUserId: (id: string | null) => void;
-  isPremium: boolean;
-  setIsPremium: (val: boolean) => void;
+  premiumStatus: PremiumStatus;
+  setPremiumStatus: (status: PremiumStatus) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -94,6 +96,10 @@ export const useAppStore = create<AppState>((set) => ({
   // Auth & Premium
   userId: null,
   setUserId: (id) => set({ userId: id }),
-  isPremium: true,
-  setIsPremium: (val) => set({ isPremium: val }),
+  premiumStatus: 'unknown',
+  setPremiumStatus: (premiumStatus) => set({ premiumStatus }),
 }));
+
+/** Premium access is granted only by the RevenueCat entitlement lifecycle. */
+export const selectIsPremium = (state: Pick<AppState, 'premiumStatus'>): boolean =>
+  state.premiumStatus === 'premium';

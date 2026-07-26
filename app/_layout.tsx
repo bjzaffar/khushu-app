@@ -54,6 +54,7 @@ export default function RootLayout() {
     setDndDuringSalah,
     startSalahMode,
     setUserId,
+    setPremiumStatus,
   } = useAppStore();
   const [initError, setInitError] = useState<string | null>(null);
 
@@ -149,6 +150,7 @@ export default function RootLayout() {
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setUserId(session?.user?.id ?? null);
+      if (!session?.user) setPremiumStatus('free');
       if (session?.user && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
         // Supabase invokes this callback while holding its auth lock. Calling auth APIs
         // from an async callback can deadlock setSession(), including recovery links.

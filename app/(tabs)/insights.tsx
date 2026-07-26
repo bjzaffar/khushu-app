@@ -4,7 +4,7 @@ import { useCallback, useState, useEffect, useRef } from 'react';
 import { useFocusEffect, router } from 'expo-router';
 import { useScrollToTop } from '@react-navigation/native';
 import { avg, count, gte, eq, and, asc, isNotNull } from 'drizzle-orm';
-import { useAppStore } from '@/store/appStore';
+import { selectIsPremium, useAppStore } from '@/store/appStore';
 import { db } from '@/db/database';
 import { salahLogs, settings } from '@/db/schema';
 import {
@@ -547,7 +547,7 @@ const TIMEFRAME_OPTIONS: { value: '7' | '30' | '90' | 'all'; label: string }[] =
 // ── InsightsScreen ────────────────────────────────────────────────────────────
 
 export default function InsightsScreen() {
-  const isPremium = useAppStore((s) => s.isPremium);
+  const isPremium = useAppStore(selectIsPremium);
   const [data, setData] = useState<InsightsData | null>(null);
   const [chartPoints, setChartPoints] = useState<ChartPoint[]>([]);
   const [salahFilter, setSalahFilter] = useState<SalahName | 'all'>('all');
@@ -928,7 +928,7 @@ export default function InsightsScreen() {
                 {(data?.reminderEffectiveness.length ?? 0) === 0 ? (
                   <View className="bg-white rounded-2xl border border-sand-200 px-5 py-5">
                     <Text style={{ fontSize: 13, color: C.ink300, lineHeight: 20 }}>
-                      After you've received a few reminders and logged those prayers, you'll see which reminder styles lead to your best focus.
+                      After you&apos;ve received a few reminders and logged those prayers, you&apos;ll see which reminder styles lead to your best focus.
                     </Text>
                   </View>
                 ) : (

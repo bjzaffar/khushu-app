@@ -140,17 +140,18 @@ ${closestCategory ? `Closest category: ${closestCategory}` : "This distraction d
 Theme: ${llmGuidance.theme}
 Tone: ${llmGuidance.tone}
 Avoid: ${llmGuidance.avoid}
-Here are the eligible foundation reminders. Build off of EXACTLY ONE of them, adapting it to this user's specific distraction:
+Here are the eligible foundation reminders. Takes EXACTLY ONE of the eligible foundation reminders, adapting it slightly to fit the user's specific distraction:
 ${foundationsList}
 
-Write ONE sentence (max 25 words) that:
+Write 1-3 sentences (max 30 words) that:
 1. Names the specific distraction briefly
 2. Aligns with the theme
 3. Gently redirects attention away from the distraction by framing Allah as the solver of that distraction or as more deserving of the user's attention
 4. Matches the tone and avoids what's listed
-5. If naming an attribute, include a concise English translation of the name in brackets directly after
+5. IF using a reminder of type "attribute", include the concise translation of that attribute directly after in brackets
+6. IF using a reminder of type "hadith" or "ayah", DO NOT alter any text within the quote; quote the entire ayah/hadith verbatim with the reference included - THEN build off of it.
 
-Return ONLY the reminder text, with no quotes or formatting. If quoting a hadith or ayah, DO NOT alter any text within that specific quote, and quote the entire ayah/hadith with the reference included.`,
+Return ONLY the reminder text, with no quotes or formatting.`,
           },
         ],
       }),

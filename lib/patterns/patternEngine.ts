@@ -13,9 +13,8 @@ function daysAgoDateStr(days: number): string {
  * the user is in, plus the top distraction if detectable.
  *
  * Phase rules (from PRD):
- *   Cold Start  — < 3 logs for this Salah  OR  < 10 total logs
- *   Emerging    — ≥ 3 logs, top distraction < 40% frequency
- *   Established — ≥ 5 logs, top distraction ≥ 40% frequency
+ *   Cold Start  — < 3 logs for this Salah
+ *   Established — ≥ 3 logs with a detectable most-frequent distraction
  *
  * dayLimit — if set, only logs from the last N days are considered (free tier = 7).
  *            Pass undefined for no limit (premium).
@@ -41,7 +40,7 @@ export async function getPatternForSalah(salahName: SalahName, dayLimit?: number
   const logCount = specificLogs.length;
 
   // ── Cold Start ───────────────────────────────────────────────────────────────
-  if (logCount < 3 || totalLogs < 10) {
+  if (logCount < 3) {
     return { phase: 'cold_start', topDistraction: null, frequency: 0, logCount, totalLogs };
   }
 
@@ -67,7 +66,7 @@ export async function getPatternForSalah(salahName: SalahName, dayLimit?: number
   const frequency = topDistraction ? maxCount / logCount : 0;
 
   // ── Established ──────────────────────────────────────────────────────────────
-  if (logCount >= 5 && frequency >= 0.4 && topDistraction) {
+  if (topDistraction) {
     return { phase: 'established', topDistraction, frequency, logCount, totalLogs };
   }
 
