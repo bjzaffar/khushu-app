@@ -7,6 +7,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Modal,
+  Animated,
 } from 'react-native';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -44,6 +45,21 @@ const RATING_LABELS: Record<number, string> = {
   5: 'Fully present',
 };
 
+type LogDay = 'today' | 'yesterday';
+
+const DAY_LABELS: Record<LogDay, string> = {
+  today: 'Today',
+  yesterday: 'Yesterday',
+};
+
+function getLogDateForDay(day: LogDay): string {
+  const date = new Date();
+  if (day === 'yesterday') date.setDate(date.getDate() - 1);
+  // Keep the app's existing log-date convention so historical records and
+  // cloud-sync keys continue to line up with already-saved logs.
+  return date.toISOString().split('T')[0];
+}
+
 function saveSettingJSON(key: string, value: unknown) {
   const str = JSON.stringify(value);
   db.insert(settings)
@@ -63,30 +79,36 @@ export default function LogScreen() {
   const { todaysPrayerTimes, userId, premiumStatus } = useAppStore();
   const isPremium = useAppStore(selectIsPremium);
 
-  function resolveInitialSalah(): SalahName {
-    if (params.salah && SALAH_NAMES.includes(params.salah as SalahName)) {
+  const resolveInitialSalah = useCallback((day: LogDay, allowNavigationIntent = false): SalahName => {
+    if (allowNavigationIntent && params.salah && SALAH_NAMES.includes(params.salah as SalahName)) {
       return params.salah as SalahName;
     }
-    // Auto-select first unlogged salah of the day
-    const today = new Date().toISOString().split('T')[0];
+    // Auto-select the first unlogged salah for the selected day.
+    const logDate = getLogDateForDay(day);
     const logs = db
       .select()
       .from(salahLogs)
-      .where(eq(salahLogs.logDate, today))
+      .where(eq(salahLogs.logDate, logDate))
       .all();
     const loggedSet = new Set(logs.map((l) => l.salahName));
     const firstUnlogged = SALAH_NAMES.find((name) => !loggedSet.has(name));
     if (firstUnlogged) return firstUnlogged;
     // All logged — fall back to current window or first salah
-    if (todaysPrayerTimes) {
+    if (day === 'today' && todaysPrayerTimes) {
       return getCurrentSalahWindow(todaysPrayerTimes) ?? 'fajr';
     }
     return 'fajr';
-  }
+  }, [params.salah, todaysPrayerTimes]);
 
-  const [selectedSalah, setSelectedSalah] = useState<SalahName>(resolveInitialSalah);
+  const [activeDay, setActiveDay] = useState<LogDay>('today');
+  const [displayedDay, setDisplayedDay] = useState<LogDay>('today');
+  const [selectedSalah, setSelectedSalah] = useState<SalahName>(() => resolveInitialSalah('today', true));
   const lastIntentSalahRef = useRef<SalahName | null>(null);
   const scrollRef = useRef<ScrollView>(null);
+  const dayPagerRef = useRef<ScrollView>(null);
+  const [dayPagerWidth, setDayPagerWidth] = useState(0);
+  const dayTransition = useRef(new Animated.Value(1)).current;
+  const [dayTransitionDirection, setDayTransitionDirection] = useState(0);
   useScrollToTop(scrollRef);
   const [focusRating, setFocusRating] = useState(0);
   const [selectedDistractions, setSelectedDistractions] = useState<string[]>([]);
@@ -94,7 +116,10 @@ export default function LogScreen() {
   const [savedSalahName, setSavedSalahName] = useState<SalahName>('fajr');
   const [relogSalah, setRelogSalah] = useState<SalahName | null>(null);
   const [deleteArchived, setDeleteArchived] = useState<{ key: string; label: string } | null>(null);
-  const [todaysLogs, setTodaysLogs] = useState<Record<string, number>>({});
+  const [logsByDay, setLogsByDay] = useState<Record<LogDay, Record<string, number>>>({
+    today: {},
+    yesterday: {},
+  });
   const [isRelogging, setIsRelogging] = useState(false);
 
   // Custom distraction state
@@ -129,33 +154,87 @@ export default function LogScreen() {
     setEditMode(false);
   }, [premiumStatus]);
 
-  // When screen gains focus, always open on first unlogged salah.
+  const loadLogsForDay = useCallback((day: LogDay) => {
+    const logs = db
+      .select()
+      .from(salahLogs)
+      .where(eq(salahLogs.logDate, getLogDateForDay(day)))
+      .all();
+    const map: Record<string, number> = {};
+    for (const log of logs) {
+      map[log.salahName] = log.focusRating;
+    }
+    return { logs, map };
+  }, []);
+
+  const resetFormForDay = useCallback((day: LogDay, map?: Record<string, number>) => {
+    const logsForDay = map ?? loadLogsForDay(day).map;
+    const firstUnlogged = SALAH_NAMES.find((name) => !(name in logsForDay));
+    setSelectedSalah(firstUnlogged ?? resolveInitialSalah(day));
+    setFocusRating(0);
+    setSelectedDistractions([]);
+    setSaved(false);
+    setIsRelogging(false);
+    setEditMode(false);
+    setShowOtherInput(false);
+    setOtherInputText('');
+  }, [loadLogsForDay, resolveInitialSalah]);
+
+  const handleDayChange = useCallback((day: LogDay) => {
+    if (day === activeDay) return;
+    const { map } = loadLogsForDay(day);
+    setLogsByDay((current) => ({ ...current, [day]: map }));
+    setActiveDay(day);
+    resetFormForDay(day, map);
+  }, [activeDay, loadLogsForDay, resetFormForDay]);
+
+  const transitionToDay = useCallback((day: LogDay) => {
+    if (day === activeDay) return;
+    const direction = day === 'yesterday' ? -1 : 1;
+    setDayTransitionDirection(direction);
+
+    Animated.timing(dayTransition, {
+      toValue: 0,
+      duration: 100,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (!finished) return;
+      setDisplayedDay(day);
+      handleDayChange(day);
+      dayTransition.setValue(0);
+      requestAnimationFrame(() => {
+        Animated.timing(dayTransition, {
+          toValue: 1,
+          duration: 160,
+          useNativeDriver: true,
+        }).start();
+      });
+    });
+  }, [activeDay, dayTransition, handleDayChange]);
+
+  useEffect(() => {
+    if (dayPagerWidth === 0) return;
+    dayPagerRef.current?.scrollTo({
+      x: activeDay === 'yesterday' ? 0 : dayPagerWidth,
+      animated: false,
+    });
+  }, [activeDay, dayPagerWidth]);
+
+  // When screen gains focus, always open Today on its first unlogged salah.
   // If navigation params carry a new intent (salah mode / notification),
   // consume it once and then clear so stale params don't override on tab re-open.
   useFocusEffect(
     useCallback(() => {
       setSaved(false);
-      setEditMode(false);
-      setShowOtherInput(false);
-      setOtherInputText('');
-      setFocusRating(0);
-      setSelectedDistractions([]);
-      setIsRelogging(false);
+      const today = loadLogsForDay('today');
+      const yesterday = loadLogsForDay('yesterday');
+      setLogsByDay({ today: today.map, yesterday: yesterday.map });
+      setActiveDay('today');
+      setDisplayedDay('today');
+      dayTransition.setValue(1);
+      resetFormForDay('today', today.map);
 
-      // Load today's logs
-      const today = new Date().toISOString().split('T')[0];
-      const logs = db
-        .select()
-        .from(salahLogs)
-        .where(eq(salahLogs.logDate, today))
-        .all();
-      const map: Record<string, number> = {};
-      for (const log of logs) {
-        map[log.salahName] = log.focusRating;
-      }
-      setTodaysLogs(map);
-
-      const loggedSet = new Set(logs.map((l) => l.salahName));
+      const loggedSet = new Set(today.logs.map((l) => l.salahName));
       const firstUnlogged = SALAH_NAMES.find((name) => !loggedSet.has(name));
 
       const intentSalah =
@@ -170,7 +249,7 @@ export default function LogScreen() {
       } else if (firstUnlogged) {
         setSelectedSalah(firstUnlogged);
       }
-    }, [params.fromSalahMode, params.salah])
+    }, [dayTransition, loadLogsForDay, params.salah, resetFormForDay])
   );
 
   function toggleDistraction(key: string) {
@@ -256,20 +335,23 @@ export default function LogScreen() {
   const canSave = focusRating > 0 && (
     focusRating === 5 || selectedDistractions.length > 0
   );
-  const allSalahsLogged = SALAH_NAMES.every((name) => name in todaysLogs);
+  const activeLogs = logsByDay[activeDay];
+  const allSalahsLogged = SALAH_NAMES.every((name) => name in activeLogs);
   const showAllSalahsLogged = allSalahsLogged && !isRelogging;
 
   async function handleSave() {
     if (!canSave) return;
     const now = new Date();
+    const logDate = getLogDateForDay(activeDay);
 
     // Read which reminder style was shown before this Salah (if any)
     const pendingKey = `pending_reminder_type_${selectedSalah}`;
-    const pendingRow = db.select().from(settings).where(eq(settings.key, pendingKey)).get();
+    const pendingRow = activeDay === 'today'
+      ? db.select().from(settings).where(eq(settings.key, pendingKey)).get()
+      : null;
     const reminderType = pendingRow?.value ?? null;
 
-    // Delete any existing log for this Salah today (re-log replaces previous)
-    const logDate = now.toISOString().split('T')[0];
+    // Re-log replaces the existing entry for this Salah on the active day.
     db.delete(salahLogs)
       .where(and(eq(salahLogs.salahName, selectedSalah), eq(salahLogs.logDate, logDate)))
       .run();
@@ -280,7 +362,7 @@ export default function LogScreen() {
       distractions: selectedDistractions.join(','),
       loggedAt: now.getTime(),
       logDate,
-      fromSalahMode: params.fromSalahMode === '1',
+      fromSalahMode: activeDay === 'today' && params.fromSalahMode === '1',
       reminderType,
     });
 
@@ -290,7 +372,7 @@ export default function LogScreen() {
       distractions: selectedDistractions.join(','),
       loggedAt: now.getTime(),
       logDate,
-      fromSalahMode: params.fromSalahMode === '1',
+      fromSalahMode: activeDay === 'today' && params.fromSalahMode === '1',
       reminderType,
     };
 
@@ -329,7 +411,7 @@ export default function LogScreen() {
     }
 
     // Fire-and-forget cloud sync (best-effort; local save already succeeded)
-    queueLogUpsert(cloudLog, userId).catch((error) =>
+    queueLogUpsert(cloudLog, userId ?? undefined).catch((error) =>
       console.warn('[sync] salah_logs upsert queued for retry:', error)
     );
 
@@ -338,35 +420,18 @@ export default function LogScreen() {
       console.warn('[widget] writeWidgetData failed:', err)
     );
 
-    await cancelPostSalahForSalah(selectedSalah);
-    await cancelReEngagementNotification();
+    if (activeDay === 'today') {
+      await cancelPostSalahForSalah(selectedSalah);
+      await cancelReEngagementNotification();
+    }
     setSavedSalahName(selectedSalah);
     setSaved(true);
   }
 
   function handleLogAnother() {
-    const today = new Date().toISOString().split('T')[0];
-    const logs = db
-      .select()
-      .from(salahLogs)
-      .where(eq(salahLogs.logDate, today))
-      .all();
-    const map: Record<string, number> = {};
-    for (const log of logs) {
-      map[log.salahName] = log.focusRating;
-    }
-    setTodaysLogs(map);
-
-    const loggedSet = new Set(logs.map((l) => l.salahName));
-    const firstUnlogged = SALAH_NAMES.find((name) => !loggedSet.has(name));
-
-    setFocusRating(0);
-    setSelectedDistractions([]);
-    setSaved(false);
-    setIsRelogging(false);
-    if (firstUnlogged) {
-      setSelectedSalah(firstUnlogged);
-    }
+    const { map } = loadLogsForDay(activeDay);
+    setLogsByDay((current) => ({ ...current, [activeDay]: map }));
+    resetFormForDay(activeDay, map);
   }
 
   // ── Acknowledgement ────────────────────────────────────────────────────────
@@ -412,7 +477,58 @@ export default function LogScreen() {
           contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 }}
           keyboardShouldPersistTaps="handled"
         >
-          <Text className="text-2xl font-semibold text-ink-900 mb-6">Log Salah</Text>
+          <Text className="text-2xl font-semibold text-ink-900 mb-5">Log Salah</Text>
+
+          <View
+            className="mb-7"
+            onLayout={(event) => setDayPagerWidth(event.nativeEvent.layout.width)}
+          >
+            <ScrollView
+              ref={dayPagerRef}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onMomentumScrollEnd={(event) => {
+                if (dayPagerWidth === 0) return;
+                const page = Math.round(event.nativeEvent.contentOffset.x / dayPagerWidth);
+                transitionToDay(page === 0 ? 'yesterday' : 'today');
+              }}
+            >
+              <View style={{ width: dayPagerWidth, height: 28 }} />
+              <View style={{ width: dayPagerWidth, height: 28 }} />
+            </ScrollView>
+            <Animated.Text
+              pointerEvents="none"
+              className="absolute self-center text-lg font-semibold text-ink-900"
+              style={{
+                opacity: dayTransition,
+                transform: [{
+                  translateX: dayTransition.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [dayTransitionDirection * 12, 0],
+                  }),
+                }],
+              }}
+            >
+              {DAY_LABELS[displayedDay]}
+            </Animated.Text>
+            <Animated.View
+              className={`absolute ${displayedDay === 'today' ? 'left-0' : 'right-0'}`}
+              style={{ opacity: dayTransition }}
+            >
+              <Pressable
+                onPress={() => transitionToDay(displayedDay === 'today' ? 'yesterday' : 'today')}
+                hitSlop={12}
+                className="py-1 px-2"
+                accessibilityRole="button"
+                accessibilityLabel={`Show ${displayedDay === 'today' ? 'yesterday' : 'today'}`}
+              >
+                <Text className="text-2xl leading-6 text-ink-500">
+                  {displayedDay === 'today' ? '‹' : '›'}
+                </Text>
+              </Pressable>
+            </Animated.View>
+          </View>
 
           {/* ── Salah Selector ─────────────────────────────────────────────── */}
           <View className="mb-6">
@@ -421,7 +537,7 @@ export default function LogScreen() {
             </Text>
             <View className="flex-row gap-x-2">
               {SALAH_NAMES.map((name) => {
-                const isLogged = name in todaysLogs;
+                const isLogged = name in activeLogs;
                 const isSelected = !showAllSalahsLogged && selectedSalah === name;
                 return (
                   <Pressable
@@ -457,7 +573,7 @@ export default function LogScreen() {
                 <Text className="text-white text-2xl font-semibold">{'\u2713'}</Text>
               </View>
               <Text className="text-ink-900 text-xl font-semibold text-center">
-                All the Salahs for today have been logged.
+                All the Salahs for {activeDay} have been logged.
               </Text>
             </View>
           ) : (
@@ -732,7 +848,7 @@ export default function LogScreen() {
               Relog Salah?
             </Text>
             <Text className="text-ink-400 text-sm text-center mb-6">
-              {relogSalah ? `${SALAH_DISPLAY_NAMES[relogSalah]} has already been logged today.` : ''}
+              {relogSalah ? `${SALAH_DISPLAY_NAMES[relogSalah]} has already been logged ${activeDay}.` : ''}
               {'\n'}Would you like to relog it?
             </Text>
             <View className="flex-row gap-x-3">
