@@ -998,8 +998,8 @@ Native widgets cannot read the app's SQLite database directly. A shared data lay
 
 **Priority:** High - gates all premium features
 **Effort:** Large
-**Depends on:** App Store Connect and Google Play Console accounts, plus Stage 1 feature flags remaining intact
-**Status:** Implementation-ready plan - execute in the order below. The first code change must remove the current unconditional Premium grant before any RevenueCat or paywall work begins.
+**Depends on:** Google Play Console account for Stage 3A; App Store Connect account is required only for Stage 3B. Stage 1 feature flags must remain intact.
+**Status:** Implementation-ready Android-first rollout. Stage 3A ships and validates Android; Stage 3B completes the deferred iOS store setup and verification. The first code change must remove the current unconditional Premium grant before any RevenueCat or paywall work begins.
 
 ### Goal
 
@@ -1007,14 +1007,15 @@ Make RevenueCat's `premium` entitlement the sole source of truth for paid access
 
 ### Required implementation order
 
-Stage 3 is complete only when every step below has been implemented and verified. Do not begin with the paywall: access must be locked before purchase UI exists.
+Do not begin with the paywall: access must be locked before purchase UI exists. Stage 3A is a shippable Android milestone; Stage 3 is fully complete only after Stage 3B passes its iOS verification.
 
 1. **Remove the unconditional grant.** Change `store/appStore.ts` first: replace `isPremium: true` and `setIsPremium(boolean)` with the `premiumStatus` state described in section 1. Remove `setIsPremium(true)` from `app/onboarding/account.tsx`; update sign-out/account-deletion paths to clear status instead. Until RevenueCat is connected, every premium gate must resolve to locked/free.
 2. **Add the entitlement boundary.** Create the mapper and RevenueCat service, with no direct SDK imports in screens. Unit-test the mapper before wiring lifecycle code.
-3. **Configure native products and SDK keys.** Complete both stores, RevenueCat offerings, native capabilities, and build-time public-key configuration. Use development/sandbox builds for all purchase validation.
+3. **Configure Android products and SDK key.** Complete Google Play setup, the Android RevenueCat app, the `premium` entitlement, the `default` offering, Android native configuration, and the Android public SDK key. Use development/sandbox builds for purchase validation.
 4. **Wire identity and lifecycle.** Configure once, identify after Supabase session restoration, serialize auth changes, refresh on foreground and CustomerInfo updates, and clear the previous entitlement before account changes.
 5. **Replace purchase surfaces and gates.** Implement the paywall, restore/manage actions, guest return flow, and shared selectors for all listed premium features.
-6. **Run the full verification matrix.** Do not mark Stage 3 complete on a local mock alone; both native sandbox flows and account-switching tests must pass.
+6. **Validate Stage 3A on Android.** Do not mark the Android milestone complete on a local mock alone; Play sandbox flows and account-switching tests must pass.
+7. **Complete Stage 3B when Apple is available.** Add the App Store products and iOS RevenueCat app to the same project, then run the deferred iOS native verification before marking all of Stage 3 complete.
 
 ### Current-state audit (must be resolved)
 
@@ -1036,13 +1037,13 @@ No compatibility shim may allow a screen to call `setIsPremium(true)`, infer Pre
 | Area | Decision |
 |---|---|
 | Entitlement | Use one RevenueCat entitlement: `premium`. No UI or feature may infer access from a Supabase session, an email address, or a successful checkout alone. |
-| Products | Create `khushu_premium_monthly` and `khushu_premium_annual` on both stores; attach both to `premium`; expose them through the current default offering. Product identifiers and prices must match the corresponding store records. |
+| Products | For Stage 3A, create `khushu_premium_monthly` and `khushu_premium_annual` in Google Play and attach them to `premium` in the `default` offering. Stage 3B adds App Store products with the same identifiers to the same entitlement and offering. Store prices and offers may differ by platform. |
 | Identity | Require a Supabase account before purchase. Configure RevenueCat once on launch, then identify the customer with the Supabase `user.id`; this makes a subscription available on the user's other signed-in devices. |
 | Guest behaviour | Guests are always free. An upgrade tap sends a guest to sign in/create an account and resumes the paywall afterwards; it must not purchase against an anonymous RevenueCat ID. |
 | Store state | `isPremium` is derived from the latest `CustomerInfo` (`entitlements.active.premium`), not independently persisted state. While entitlement resolution is pending or fails without a usable RevenueCat cache, access is free/locked. |
 | Account changes | On sign-in, call `Purchases.logIn(user.id)` and apply its returned `CustomerInfo`. On sign-out and account deletion, call `Purchases.logOut()` and set the app state to free before another user can access the app. Do not transfer or restore purchases automatically. |
 | Restore and management | Keep an explicit Restore purchases action. Use RevenueCat Customer Center for Manage subscription where available; otherwise show the platform's subscription-management link. |
-| Web | This stage covers native iOS and Android subscriptions only. Web remains a non-purchase surface unless a separate RevenueCat Billing scope is approved. |
+| Platform rollout | Android is the first purchase surface. Until Stage 3B is configured, iOS must not show a purchasable paywall or attempt RevenueCat configuration without an iOS SDK key; it may show an unavailable state or remain undistributed. Web remains a non-purchase surface unless a separate RevenueCat Billing scope is approved. |
 
 ### 1. Replace the current `isPremium` implementation first
 
@@ -1054,21 +1055,27 @@ The current app has two invalid grants: `store/appStore.ts` defaults `isPremium`
 4. Add one entitlement mapper, e.g. `lib/revenuecat/entitlements.ts`, that returns `customerInfo.entitlements.active.premium != null`. All purchase, restore, lifecycle, and CustomerInfo-listener paths call that same mapper/setter.
 5. Do not store an entitlement boolean in SQLite, AsyncStorage, or Supabase. RevenueCat's CustomerInfo cache is the only offline source permitted; a refresh failure must never promote a free user to premium.
 
-### 2. Configure stores and RevenueCat before app code
+### 2. Configure Android and RevenueCat before app code (Stage 3A)
 
-1. Create the App Store Connect and Google Play Console apps using the existing identifier `com.khushuai.app`; complete tax, banking, agreements, and internal-test setup.
-2. Add the monthly and annual auto-renewable subscription products, localized names/descriptions, review metadata, pricing, and any introductory offer in each store. Configure an App Store subscription group.
-3. Create a RevenueCat project with separate iOS and Android apps, import/connect both stores through the required store credentials, create entitlement `premium`, attach both products, and create the `default` offering with monthly and annual packages.
+1. In Google Play Console, create or complete the app with identifier `com.khushuai.app`, then complete tax, banking, agreements, and closed-test setup.
+2. Add `khushu_premium_monthly` and `khushu_premium_annual` as subscriptions with localized names/descriptions, pricing, review metadata, and any introductory offer.
+3. Create a RevenueCat project and Android app, connect Google Play through the required credentials, create entitlement `premium`, attach both Android products, and create the `default` offering with monthly and annual packages.
 4. Set RevenueCat's restore/transfer behaviour deliberately and document it in project settings. The app must never call `syncPurchases()` on every launch: it can transfer/alias customers and adds unnecessary latency. Use user-triggered `restorePurchases()` instead.
-5. Store only the public, platform-specific RevenueCat SDK keys in build-time Expo configuration/environment variables, e.g. `EXPO_PUBLIC_REVENUECAT_IOS_API_KEY` and `EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY`. Never commit RevenueCat secret API keys or store-service credentials.
+5. Store only `EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY` in the Android build environment. Define the optional iOS variable shape now if useful, but do not configure an empty or placeholder key. Never commit RevenueCat secret API keys or store-service credentials.
 6. Add `react-native-purchases` and `react-native-purchases-ui`. Because this Expo app already contains native projects, rebuild native development/release clients after installation; Expo Go must not validate real purchases.
-7. Enable In-App Purchase on the iOS target. Add Android Billing permission and change `MainActivity` from `singleTask` to a store-compatible `singleTop` or `standard` launch mode so external payment verification can return correctly.
+7. Add Android Billing permission and change `MainActivity` from `singleTask` to a store-compatible `singleTop` or `standard` launch mode so external payment verification can return correctly.
+
+### 2B. Add Apple when the developer account is ready (Stage 3B)
+
+1. Create the App Store Connect app using `com.khushuai.app`; complete agreements, tax/banking, subscription group, products, localized metadata, and TestFlight setup.
+2. Add an iOS app to the existing RevenueCat project, connect App Store Connect, attach the iOS monthly and annual products to the existing `premium` entitlement and `default` offering, and add `EXPO_PUBLIC_REVENUECAT_IOS_API_KEY` to iOS build environments.
+3. Enable In-App Purchase in the iOS target, rebuild the native client/archive, and run the deferred iOS sandbox and account-sharing tests.
 
 ### 3. Add one RevenueCat service boundary
 
 Create `lib/revenuecat/` rather than importing `react-native-purchases` directly from screens.
 
-1. `configureRevenueCat()` configures the SDK once, early in `app/_layout.tsx`, with the correct public key for iOS/Android and no hard-coded key. It is a no-op on unsupported web builds.
+1. `configureRevenueCat()` configures the SDK once, early in `app/_layout.tsx`, with the correct public key for the active native platform and no hard-coded key. It is a no-op on web and must leave iOS purchases unavailable until the iOS public key has been configured in Stage 3B.
 2. `identifyRevenueCatUser(userId)` calls `Purchases.logIn(userId)`, maps the returned CustomerInfo, and updates the store. On app startup, obtain the restored Supabase session first, then identify that `user.id`; do not configure every user under one shared ID.
 3. `refreshPremiumStatus()` calls `Purchases.getCustomerInfo()` and maps entitlement state. Invoke it after configuration/identity resolution, when the app returns to the foreground, after purchase/restore, and before a premium-only action when state is stale. Register the SDK CustomerInfo update listener so renewals, cancellations, refunds, and expiration updates reach the store.
 4. `clearRevenueCatUser()` calls `Purchases.logOut()` during Supabase sign-out/account deletion and immediately sets `premiumStatus` to `free` (or `unknown` while a new session is being resolved). Failure must be logged and must not leave the previous user's entitlement visible.
@@ -1079,7 +1086,7 @@ Create `lib/revenuecat/` rather than importing `react-native-purchases` directly
 1. In `app/_layout.tsx`, configure RevenueCat once, subscribe to the existing Supabase auth-state changes, and serialize identity changes so an older async result cannot overwrite a newer session's premium state.
 2. For `INITIAL_SESSION` and `SIGNED_IN`, set `userId`, call `identifyRevenueCatUser(session.user.id)`, then run existing cloud-log sync independently. For `SIGNED_OUT`, clear the store's user and premium state and call `clearRevenueCatUser()`.
 3. In `app/onboarding/account.tsx`, remove `setIsPremium(true)` from `onAuthSuccess()`. After Supabase sign-in/sign-up/OAuth callback, wait for the shared lifecycle/auth helper to resolve RevenueCat; navigate normally, with premium locked until entitlement resolution arrives.
-4. Preserve the existing Google OAuth callback (`khushuai://auth/callback`) and test it on Android and iOS. A completed OAuth login must produce the same RevenueCat identity path as email/password login.
+4. Preserve the existing Google OAuth callback (`khushuai://auth/callback`) and test it on Android in Stage 3A; repeat the same test on iOS in Stage 3B. A completed OAuth login must produce the same RevenueCat identity path as email/password login.
 5. Guard every entry to `/paywall`: a guest routes to account auth with a return-to-paywall parameter; authenticated free users see packages; active premium users see subscription management rather than a second purchase CTA.
 
 ### 5. Replace the paywall stub and settings actions
@@ -1091,22 +1098,34 @@ Create `lib/revenuecat/` rather than importing `react-native-purchases` directly
 5. Replace Settings' Manage subscription navigation to the paywall with Customer Center (or the appropriate store subscription-management surface). Refresh CustomerInfo after it closes. Retain an Upgrade entry for free users and route it through the authenticated paywall guard.
 6. Ensure all existing feature gates use the shared derived entitlement state: custom-distraction creation/editing and AI classification in `log.tsx`; time-range/detail gates in `insights.tsx`; AI pattern/reminder calls in `salah-mode.tsx` and `notificationService.ts`; and Premium/settings labels. No screen may keep a local premium boolean or use `userId` as a proxy.
 
-### 6. Verify access changes and release readiness
+### 6. Verify Android access changes and release readiness (Stage 3A)
 
 1. Add unit tests for the CustomerInfo-to-premium mapper: active entitlement, absent entitlement, expired entitlement, malformed/empty CustomerInfo, and unknown/error states all resolve deterministically.
 2. Add integration tests with a mocked RevenueCat service for cold launch as guest, authenticated free user, active premium user, sign-out/sign-in as another user, and stale async responses.
-3. Test native sandbox flows on both platforms: new monthly purchase, annual purchase, cancellation, pending payment, restore after reinstall, expiration/refund, and a subscription bought on device A becoming available on device B after both use the same Supabase account.
-4. Test store-return behaviour on Android after external payment verification and verify the iOS In-App Purchase capability in an archive/TestFlight build. Confirm no real purchase is attempted in Expo Go.
+3. Test Android sandbox flows: new monthly purchase, annual purchase, cancellation, pending payment, restore after reinstall, expiration/refund, and the subscription becoming available on another Android device signed into the same Supabase account.
+4. Test store-return behaviour on Android after external payment verification. Confirm no real purchase is attempted in Expo Go and that iOS cannot start a purchase before Stage 3B.
 5. Test all gate transitions: free users cannot invoke AI/unlimited-insights paths; premium users can; entitlement loss locks future premium actions without deleting local logs; reactivation restores access.
-6. Before release, verify RevenueCat dashboard entitlement assignment for each product, App Store review metadata, Play closed-test track, privacy/terms links, cancellation management, and production public SDK keys. Enable verbose RevenueCat logs only for development builds.
+6. Before the Android release, verify RevenueCat entitlement assignment for both Android products, the Play closed-test track, privacy/terms links, cancellation management, and the production Android public SDK key. Enable verbose RevenueCat logs only for development builds.
 
-### Definition of done
+### 6B. Complete deferred iOS verification (Stage 3B)
+
+1. Run TestFlight sandbox flows for monthly and annual purchase, cancellation, pending payment, restore after reinstall, expiration/refund, and account switching.
+2. Verify the iOS In-App Purchase capability in an archive/TestFlight build and confirm an entitlement bought on Android is visible on iOS—and vice versa—when both devices use the same Supabase account.
+3. Before the iOS release, verify RevenueCat entitlement assignment for both iOS products, App Store review metadata, privacy/terms links, cancellation management, and the production iOS public SDK key.
+
+### Stage 3A definition of done (Android launch)
 
 - A fresh install starts locked/free, never Premium by default.
 - Signing in does not alter premium access unless RevenueCat reports active `premium`.
-- An active entitlement unlocks every listed premium feature across supported native devices signed into the same Supabase account.
+- An active Android entitlement unlocks every listed premium feature on Android devices signed into the same Supabase account.
 - Purchase, restore, subscription management, expiration/refund, sign-out, and account switching all update visible gates from the shared CustomerInfo mapper.
-- The release build completes sandbox purchases and restores on both iOS and Android; no secret keys are in the repository; and the full Stage 3 verification list passes.
+- The Android release build completes Play sandbox purchases and restores; iOS cannot make a purchase before Stage 3B; no secret keys are in the repository; and the Stage 3A verification list passes.
+
+### Stage 3B definition of done (iOS completion)
+
+- The iOS release build completes TestFlight sandbox purchases and restores.
+- One active `premium` entitlement unlocks every listed premium feature across Android and iOS devices signed into the same Supabase account.
+- The full Stage 3 verification list passes.
 
 ### Files to modify
 
@@ -1120,9 +1139,9 @@ Create `lib/revenuecat/` rather than importing `react-native-purchases` directly
 | `app/paywall.tsx` | Replace the stub with offering, package selection, purchase, restore, loading, and error states. |
 | `app/(tabs)/settings.tsx` | Route free/guest upgrades correctly and open Customer Center or store management for active subscribers. |
 | `app/(tabs)/log.tsx`, `app/(tabs)/insights.tsx`, `app/salah-mode.tsx`, `lib/notifications/notificationService.ts` | Use the shared derived entitlement selector for every existing premium gate. |
-| `app.json`, `.env.example`, build environment | Add public platform SDK-key configuration and required native/build configuration; do not add secrets to source control. |
+| `app.json`, `.env.example`, build environment | Add the Android public SDK-key configuration now; add the iOS public key in Stage 3B. Do not add secrets to source control. |
 | `android/app/src/main/AndroidManifest.xml` | Add Billing permission and use a store-compatible `MainActivity` launch mode. |
-| iOS project/capabilities | Enable In-App Purchase and ensure native builds link the RevenueCat packages. |
+| iOS project/capabilities | Stage 3B only: enable In-App Purchase and ensure native builds link the RevenueCat packages. |
 | `package.json`, lockfile | Add `react-native-purchases` and `react-native-purchases-ui`; add relevant test commands/dependencies if needed. |
 | Stage 4 test suites | Add entitlement, auth-lifecycle, and paywall integration coverage specified above. |
 
@@ -1242,7 +1261,10 @@ Stage 1 (AI reminders)
 Stage 2 (Home screen widget)
     │
     ▼
-Stage 3 (RevenueCat IAP)
+Stage 3A (RevenueCat IAP — Android)
+    │
+    ▼
+Stage 3B (RevenueCat IAP — iOS)
     │
     ▼
 Stage 4 (Testing)

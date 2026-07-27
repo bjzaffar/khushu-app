@@ -27,7 +27,7 @@ import type { SalahName, CalculationMethodKey, AsrMadhab } from '@/types';
 import { supabase } from '@/lib/supabase/client';
 import { syncLogsFromCloud } from '@/lib/supabase/sync';
 import NetInfo from '@react-native-community/netinfo';
-import { refreshWidgetIfWeekChanged, writeWidgetData } from '@/lib/widget/widgetData';
+import { writeWidgetData } from '@/lib/widget/widgetData';
 import { setPendingUrl } from '@/lib/deeplink';
 import * as Linking from 'expo-linking';
 import { archiveActiveCustomDistractions } from '@/lib/customDistractions';
@@ -148,11 +148,6 @@ export default function RootLayout() {
         const weekAgoStr = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
         const weekCountRow = db.select({ n: count() }).from(salahLogs).where(gte(salahLogs.logDate, weekAgoStr)).get();
         await scheduleWeeklySummaryNotification(weekCountRow?.n ?? 0);
-
-        // Refresh widget data if the week has rolled over (Monday 00:00+)
-        refreshWidgetIfWeekChanged(false).catch((err) =>
-          console.warn('[widget] refreshWidgetIfWeekChanged failed:', err)
-        );
 
         setDbReady(true);
       } catch (e: unknown) {
