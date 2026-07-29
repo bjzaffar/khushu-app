@@ -2,10 +2,10 @@ import { useRef, useEffect, useCallback } from 'react';
 import {
   ScrollView,
   View,
-  Text,
   NativeSyntheticEvent,
   NativeScrollEvent,
 } from 'react-native';
+import { Text } from '@/components/ui/Typography';
 
 const ITEM_HEIGHT = 48;
 const VISIBLE_ITEMS = 5;

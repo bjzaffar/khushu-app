@@ -1037,7 +1037,7 @@ No compatibility shim may allow a screen to call `setIsPremium(true)`, infer Pre
 | Area | Decision |
 |---|---|
 | Entitlement | Use one RevenueCat entitlement: `premium`. No UI or feature may infer access from a Supabase session, an email address, or a successful checkout alone. |
-| Products | For Stage 3A, create `khushu_premium_monthly` and `khushu_premium_annual` in Google Play and attach them to `premium` in the `default` offering. Stage 3B adds App Store products with the same identifiers to the same entitlement and offering. Store prices and offers may differ by platform. |
+| Products | For Stage 3A, create only `khushu_premium_monthly` in Google Play and attach it to `premium` in the `default` offering. Stage 3B adds the corresponding monthly App Store product to the same entitlement and offering. An annual option is explicitly out of scope until separately approved. |
 | Identity | Require a Supabase account before purchase. Configure RevenueCat once on launch, then identify the customer with the Supabase `user.id`; this makes a subscription available on the user's other signed-in devices. |
 | Guest behaviour | Guests are always free. An upgrade tap sends a guest to sign in/create an account and resumes the paywall afterwards; it must not purchase against an anonymous RevenueCat ID. |
 | Store state | `isPremium` is derived from the latest `CustomerInfo` (`entitlements.active.premium`), not independently persisted state. While entitlement resolution is pending or fails without a usable RevenueCat cache, access is free/locked. |
@@ -1058,17 +1058,241 @@ The current app has two invalid grants: `store/appStore.ts` defaults `isPremium`
 ### 2. Configure Android and RevenueCat before app code (Stage 3A)
 
 1. In Google Play Console, create or complete the app with identifier `com.khushuai.app`, then complete tax, banking, agreements, and closed-test setup.
-2. Add `khushu_premium_monthly` and `khushu_premium_annual` as subscriptions with localized names/descriptions, pricing, review metadata, and any introductory offer.
-3. Create a RevenueCat project and Android app, connect Google Play through the required credentials, create entitlement `premium`, attach both Android products, and create the `default` offering with monthly and annual packages.
+2. Add `khushu_premium_monthly` as a subscription with localized name/description, pricing, review metadata, and any introductory offer.
+3. Create a RevenueCat project and Android app, connect Google Play through the required credentials, create entitlement `premium`, attach the monthly Android product, and create the `default` offering with its monthly package.
 4. Set RevenueCat's restore/transfer behaviour deliberately and document it in project settings. The app must never call `syncPurchases()` on every launch: it can transfer/alias customers and adds unnecessary latency. Use user-triggered `restorePurchases()` instead.
 5. Store only `EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY` in the Android build environment. Define the optional iOS variable shape now if useful, but do not configure an empty or placeholder key. Never commit RevenueCat secret API keys or store-service credentials.
 6. Add `react-native-purchases` and `react-native-purchases-ui`. Because this Expo app already contains native projects, rebuild native development/release clients after installation; Expo Go must not validate real purchases.
 7. Add Android Billing permission and change `MainActivity` from `singleTask` to a store-compatible `singleTop` or `standard` launch mode so external payment verification can return correctly.
 
+### Stage 3A manual setup runbook (Android, monthly only)
+
+Follow this runbook in order. An Apple developer account is not required for any of it.
+
+#### 1. Decide the single subscription
+
+Use exactly these values:
+
+| Field | Value |
+|---|---|
+| Google Play subscription ID | `khushu_premium_monthly` |
+| Google Play base-plan ID | `monthly` |
+| RevenueCat entitlement | `premium` |
+| RevenueCat offering | `default` |
+| RevenueCat package | Monthly |
+| App package name | `com.khushuai.app` |
+
+Choose the monthly price directly in Play Console. The app reads and displays the local Play price, so no price must be supplied to the codebase. Do not create an annual subscription or annual package.
+
+The app is **Free** to install. Premium is an optional monthly in-app subscription; do not set the app download itself to Paid.
+
+#### 2. Complete the Play Console app and upload an AAB
+
+1. Go to https://play.google.com/console/.
+2. On **All apps**, select **Create app** if Khushu does not already exist in Play Console.
+3. Enter the app name and default language; select **App** and **Free**. Accept the declarations and select **Create app**.
+4. Confirm the Android package is exactly `com.khushuai.app`. It must match the app and RevenueCat configuration.
+5. Complete the dashboard items required for testing and monetization: app details, content declarations, Data Safety, tax/banking/payment profile, and any agreements Play requires.
+6. Create a Closed testing track:
+   - Go to **Testing** -> **Closed testing**.
+   - Create a tester email list containing the Google account used on the Android test phone.
+   - Add at least the test country/region under the track's availability.
+7. Create a fresh Android App Bundle from this codebase and upload it to the closed track. Google Play requires an uploaded app before subscription products can be created.
+
+For the test/release AAB, run:
+
+```powershell
+eas build --platform android --profile production
+```
+
+Download the resulting `.aab`, upload it to the closed track, and submit/roll it out for testing. Complete the release process until Play makes the track available to testers.
+
+Reference: https://www.revenuecat.com/docs/getting-started/entitlements/android-products
+
+#### 3. Create the monthly subscription in Play Console
+
+1. Open the Khushu app in Play Console.
+2. Go to **Monetize** -> **Products** -> **Subscriptions**.
+3. Create the subscription:
+   - Product ID: `khushu_premium_monthly`
+   - Name: for example, `Khushu Premium Monthly`
+   - Description: a short customer-facing description, such as `AI reminders, detailed insights, and cloud sync.`
+4. Add one base plan:
+   - Base-plan ID: `monthly`
+   - Billing period: one month
+   - Renewal: auto-renewing
+   - Set the price and activate it.
+5. Add localized name/description for every launch language and market.
+6. Do not add a free trial or offer unless intentionally desired. It can be added later without a code change.
+7. Confirm the subscription and its base plan are both **Active**.
+
+With modern Play subscriptions, RevenueCat imports the base plan as the purchasable product, typically represented internally as `khushu_premium_monthly:monthly`.
+
+Reference: https://www.revenuecat.com/docs/getting-started/entitlements/android-products
+
+#### 4. Create Google service credentials for RevenueCat
+
+Do **not** put this JSON file in the repository, `.env.local`, EAS variables, or chat. Upload it only to RevenueCat.
+
+**In Google Cloud Console:**
+
+1. Use the Google Cloud project linked to the Play Console account, or create one and link it through Play Console's API access area.
+2. Enable:
+   - Google Play Android Developer API
+   - Google Play Developer Reporting API
+   - Cloud Pub/Sub API
+3. Go to **IAM & Admin** -> **Service Accounts** -> **Create service account**.
+4. Name it something clear, for example `revenuecat-service-account`.
+5. Grant Cloud-project roles:
+   - `Pub/Sub Editor`
+   - `Monitoring Viewer`
+6. Open the service account -> **Keys** -> **Add key** -> **Create new key** -> JSON. Download the JSON file securely.
+
+**In Play Console:**
+
+1. Go to **Users and permissions** and invite the service-account email address.
+2. Give it access to the Khushu app.
+3. Under account permissions, enable exactly:
+   - `View app information and download bulk reports (read-only)`
+   - `View financial data, orders, and cancellation survey response`
+   - `Manage orders and subscriptions`
+4. Apply/save the permissions and confirm the account becomes Active.
+
+Credentials can take up to 36 hours to become valid. Do not assume a first validation failure means the setup is wrong.
+
+Reference: https://www.revenuecat.com/docs/service-credentials/creating-play-service-credentials
+
+#### 5. Configure RevenueCat
+
+1. Create a RevenueCat account/project if one does not already exist.
+2. In the project, go to **Apps** and add a Google Play app:
+   - Name: `Khushu Android`
+   - Package name: `com.khushuai.app`
+3. In that Android app's settings, upload the downloaded Google service-account JSON and save.
+4. Wait for the credential validator to show valid. If it is not valid after propagation, use RevenueCat's validator result to check the missing permission or API.
+5. Import the active Play subscription product into RevenueCat.
+6. In **Product catalog** -> **Entitlements**, create:
+   - Identifier: `premium`
+   - Attach the imported monthly product to it.
+7. In **Offerings**, create or edit `default`:
+   - Add one Monthly package.
+   - Attach the imported monthly product.
+   - Make `default` the current offering.
+8. Do not add an annual package.
+
+RevenueCat needs the app name, package name, and service credentials before it can import Play products into offerings.
+
+Reference: https://www.revenuecat.com/docs/projects/connect-a-store
+
+#### 6. Configure Customer Center and Google notifications
+
+**Customer Center:**
+
+1. In RevenueCat, open **Project Settings** -> **Monetization Tools** -> **Customer Center**.
+2. Enable/save the default configuration.
+3. Add a support email address.
+4. Keep the default Android-relevant actions:
+   - Cancel subscription
+   - Missing purchase / restore
+5. Skip promotional retention offers for now. They are optional and require separate Play offers.
+
+The app's **Manage subscription** button opens Customer Center.
+
+Reference: https://www.revenuecat.com/docs/tools/customer-center/customer-center-configuration
+
+**Real-time developer notifications:**
+
+1. In RevenueCat's Google Play app settings, configure/connect a Pub/Sub topic.
+2. Copy the generated topic ID.
+3. In Play Console, go to **Monetize** -> **Monetization setup**.
+4. Paste the Pub/Sub topic ID into the Google Real-time Developer Notifications section and save.
+5. Use Play's **Send test notification** action.
+6. Confirm RevenueCat receives it.
+
+This keeps cancellations, renewals, refunds, and expirations current without waiting for a user to reopen the app.
+
+Reference: https://www.revenuecat.com/docs/service-credentials/creating-play-service-credentials/google-play-checklists
+
+#### 7. Add the public build variables
+
+The code keeps purchases locked until all three are present.
+
+In the Expo dashboard, open the project -> **Project settings** -> **Environment variables** -> **Add variable**. Create these as project-wide **Plain text** variables for at least `production`. Add them to `preview` too if using preview builds.
+
+| Name | Value |
+|---|---|
+| `EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY` | RevenueCat's Android public SDK key |
+| `EXPO_PUBLIC_PRIVACY_POLICY_URL` | Final public HTTPS privacy-policy URL |
+| `EXPO_PUBLIC_TERMS_OF_USE_URL` | Final public HTTPS terms-of-use URL |
+
+Retrieve the Android public SDK key from RevenueCat -> **Project Settings** -> **API keys**. Use the Android/Google Play public key, not a Test Store key and never a secret API key.
+
+`EXPO_PUBLIC_` values are embedded in the app and are therefore readable by users. That is appropriate for the RevenueCat public SDK key and public legal URLs, but never for credentials or secret keys.
+
+Equivalent CLI commands:
+
+```powershell
+eas env:create --name EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY --value "YOUR_ANDROID_PUBLIC_KEY" --environment production --visibility plaintext
+
+eas env:create --name EXPO_PUBLIC_PRIVACY_POLICY_URL --value "https://your-domain.com/privacy" --environment production --visibility plaintext
+
+eas env:create --name EXPO_PUBLIC_TERMS_OF_USE_URL --value "https://your-domain.com/terms" --environment production --visibility plaintext
+```
+
+Repeat with `--environment preview` when using the preview profile.
+
+Reference: https://docs.expo.dev/eas/environment-variables/manage/
+
+#### 8. Publish the legal pages
+
+Before a real purchase can be enabled, host public HTTPS pages for:
+
+- Privacy Policy
+- Terms of Use
+
+They must be real, publicly reachable URLs, not temporary documents, local files, or login-protected pages.
+
+Have them reviewed for the app's actual data flows: Supabase account/log data, location data, notifications, RevenueCat subscription status, and Google Play billing. The Play Data Safety declaration must match the policies. For legal wording and compliance, use a qualified professional.
+
+#### 9. Prepare the Android test device
+
+1. Use a real Android phone where possible.
+2. Set a device PIN/lock screen.
+3. Log into the Play Store with only the Google account added as both:
+   - a Closed-track tester
+   - a License tester in Play Console -> **Settings** -> **License testing**
+4. Open the closed-track opt-in URL on that same account and select **Become a tester**.
+5. Install the app from the Play closed-track listing, not Expo Go.
+6. Sign into the app with a test Supabase account.
+
+The tester must open the opt-in URL or subscriptions may not load. A PIN and the correct Play account are required for reliable subscription sandbox testing.
+
+Reference: https://www.revenuecat.com/docs/test-and-launch/sandbox/google-play-store
+
+#### 10. Run the Android sandbox acceptance test
+
+Use the production Android RevenueCat key in the closed-track build.
+
+1. **Guest gate:** Launch without signing in, tap an Upgrade entry, and confirm it routes to account sign-in without permitting an anonymous purchase.
+2. **Free signed-in user:** Sign in, confirm the paywall shows exactly one monthly option and a Play-provided localized price, and confirm Premium-only features remain locked.
+3. **Purchase:** Tap Subscribe, complete the Google Play test-card flow, confirm Premium unlocks immediately, then confirm the RevenueCat dashboard shows the transaction under the same Supabase user ID. Enable **Sandbox data** in RevenueCat to see it.
+4. **Persistence:** Force-close and reopen the app, then uninstall/reinstall and sign in with the same Khushu account. Confirm Premium remains active in both cases.
+5. **Account switching:** Sign out of the purchasing Khushu account, sign in with a different Khushu account, and confirm the second account is free. Do not press Restore on the second Khushu account using the same Google Play subscription; subscriptions must not be intentionally assigned to multiple app accounts.
+6. **Restore:** Return to the purchasing Khushu account, use Restore purchases, and confirm the entitlement is active and a success message appears.
+7. **Management:** Open Settings -> Manage subscription. Confirm Customer Center opens and sends the user to the correct Google Play subscription-management flow.
+8. **Expiry/cancellation:** Cancel the sandbox subscription in Play, wait for the sandbox expiry cycle, then reopen the app. Confirm Premium locks future access without deleting logs. A one-month sandbox subscription renews on an accelerated five-minute cadence.
+
+Before release, confirm the Play subscription is active, RevenueCat fetches the monthly product, the production Android key is in the production build, and real Play sandbox purchases unlock `premium`.
+
+References:
+
+- https://www.revenuecat.com/docs/test-and-launch/sandbox/google-play-store
+- https://www.revenuecat.com/docs/test-and-launch/launch-checklist
+
 ### 2B. Add Apple when the developer account is ready (Stage 3B)
 
 1. Create the App Store Connect app using `com.khushuai.app`; complete agreements, tax/banking, subscription group, products, localized metadata, and TestFlight setup.
-2. Add an iOS app to the existing RevenueCat project, connect App Store Connect, attach the iOS monthly and annual products to the existing `premium` entitlement and `default` offering, and add `EXPO_PUBLIC_REVENUECAT_IOS_API_KEY` to iOS build environments.
+2. Add an iOS app to the existing RevenueCat project, connect App Store Connect, attach the iOS monthly product to the existing `premium` entitlement and `default` offering, and add `EXPO_PUBLIC_REVENUECAT_IOS_API_KEY` to iOS build environments.
 3. Enable In-App Purchase in the iOS target, rebuild the native client/archive, and run the deferred iOS sandbox and account-sharing tests.
 
 ### 3. Add one RevenueCat service boundary
@@ -1092,7 +1316,7 @@ Create `lib/revenuecat/` rather than importing `react-native-purchases` directly
 ### 5. Replace the paywall stub and settings actions
 
 1. In `app/paywall.tsx`, fetch `Purchases.getOfferings()` after authenticated premium state resolves. Render only available packages from `current`; render localized store price strings and package terms, never a hard-coded price.
-2. Provide monthly and annual choices, a clear selected state, trial/introductory-offer copy only when supplied by the package, Terms of Use and Privacy Policy links, and required subscription disclosure.
+2. Provide the monthly package with a clear selected state, trial/introductory-offer copy only when supplied by the package, Terms of Use and Privacy Policy links, and required subscription disclosure.
 3. On purchase, disable duplicate taps, call `Purchases.purchasePackage(selectedPackage)`, and unlock only if returned CustomerInfo has active `premium`. Handle cancellation silently, show recoverable network/store errors, and show pending state where reported.
 4. Restore purchases from an explicit button using `Purchases.restorePurchases()`, map returned CustomerInfo, and tell the user whether Premium was restored. Do not automatically restore during launch or sign-in.
 5. Replace Settings' Manage subscription navigation to the paywall with Customer Center (or the appropriate store subscription-management surface). Refresh CustomerInfo after it closes. Retain an Upgrade entry for free users and route it through the authenticated paywall guard.
@@ -1102,16 +1326,16 @@ Create `lib/revenuecat/` rather than importing `react-native-purchases` directly
 
 1. Add unit tests for the CustomerInfo-to-premium mapper: active entitlement, absent entitlement, expired entitlement, malformed/empty CustomerInfo, and unknown/error states all resolve deterministically.
 2. Add integration tests with a mocked RevenueCat service for cold launch as guest, authenticated free user, active premium user, sign-out/sign-in as another user, and stale async responses.
-3. Test Android sandbox flows: new monthly purchase, annual purchase, cancellation, pending payment, restore after reinstall, expiration/refund, and the subscription becoming available on another Android device signed into the same Supabase account.
+3. Test Android sandbox flows: new monthly purchase, cancellation, pending payment, restore after reinstall, expiration/refund, and the subscription becoming available on another Android device signed into the same Supabase account.
 4. Test store-return behaviour on Android after external payment verification. Confirm no real purchase is attempted in Expo Go and that iOS cannot start a purchase before Stage 3B.
 5. Test all gate transitions: free users cannot invoke AI/unlimited-insights paths; premium users can; entitlement loss locks future premium actions without deleting local logs; reactivation restores access.
-6. Before the Android release, verify RevenueCat entitlement assignment for both Android products, the Play closed-test track, privacy/terms links, cancellation management, and the production Android public SDK key. Enable verbose RevenueCat logs only for development builds.
+6. Before the Android release, verify RevenueCat entitlement assignment for the Android monthly product, the Play closed-test track, privacy/terms links, cancellation management, and the production Android public SDK key. Enable verbose RevenueCat logs only for development builds.
 
 ### 6B. Complete deferred iOS verification (Stage 3B)
 
-1. Run TestFlight sandbox flows for monthly and annual purchase, cancellation, pending payment, restore after reinstall, expiration/refund, and account switching.
+1. Run TestFlight sandbox flows for monthly purchase, cancellation, pending payment, restore after reinstall, expiration/refund, and account switching.
 2. Verify the iOS In-App Purchase capability in an archive/TestFlight build and confirm an entitlement bought on Android is visible on iOS—and vice versa—when both devices use the same Supabase account.
-3. Before the iOS release, verify RevenueCat entitlement assignment for both iOS products, App Store review metadata, privacy/terms links, cancellation management, and the production iOS public SDK key.
+3. Before the iOS release, verify RevenueCat entitlement assignment for the iOS monthly product, App Store review metadata, privacy/terms links, cancellation management, and the production iOS public SDK key.
 
 ### Stage 3A definition of done (Android launch)
 

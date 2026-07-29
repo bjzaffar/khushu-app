@@ -1,7 +1,10 @@
-import { View, Text, ScrollView, Pressable } from 'react-native';
+import { View, ScrollView, Pressable } from 'react-native';
+import { Text } from '@/components/ui/Typography';
+import { StarIcon } from 'react-native-heroicons/outline';
+import { StarIcon as StarSolidIcon } from 'react-native-heroicons/solid';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useScrollToTop } from '@react-navigation/native';
 import { useAppStore } from '@/store/appStore';
 import {
@@ -14,6 +17,12 @@ import { formatPrayerTime, getCurrentSalahWindow } from '@/lib/prayer/prayerTime
 import { db } from '@/db/database';
 import { salahLogs } from '@/db/schema';
 import { eq } from 'drizzle-orm';
+import {
+  requestNotificationPermissions,
+  schedulePostSalahPrompts,
+  schedulePreSalahReminders,
+  setupNotificationChannel,
+} from '@/lib/notifications/notificationService';
 
 type SalahStatus = 'logged' | 'current' | 'upcoming' | 'past';
 
@@ -31,11 +40,50 @@ function getSalahStatus(
 }
 
 export default function HomeScreen() {
-  const { todaysPrayerTimes, startSalahMode } = useAppStore();
+  const {
+    isDbReady,
+    todaysPrayerTimes,
+    reminderMinutesBefore,
+    postSalahPromptEnabled,
+    startSalahMode,
+  } = useAppStore();
   // salahName → focusRating for logs today
   const [todaysLogs, setTodaysLogs] = useState<Record<string, number>>({});
+  const [notificationsGranted, setNotificationsGranted] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+  const hasRequestedNotifications = useRef(false);
+  const hasScheduledInitialReminders = useRef(false);
   useScrollToTop(scrollRef);
+
+  // Home is the first screen after the user finishes onboarding, so ask here
+  // rather than interrupting the location or account steps.
+  useEffect(() => {
+    if (!isDbReady || hasRequestedNotifications.current) return;
+    hasRequestedNotifications.current = true;
+
+    async function requestInitialNotificationPermission() {
+      await setupNotificationChannel();
+      setNotificationsGranted(await requestNotificationPermissions());
+    }
+
+    requestInitialNotificationPermission().catch((error) =>
+      console.warn('[notifications] initial permission request failed:', error)
+    );
+  }, [isDbReady]);
+
+  useEffect(() => {
+    if (!notificationsGranted || !todaysPrayerTimes || hasScheduledInitialReminders.current) return;
+    hasScheduledInitialReminders.current = true;
+
+    async function scheduleInitialReminders() {
+      await schedulePreSalahReminders(todaysPrayerTimes, reminderMinutesBefore);
+      if (postSalahPromptEnabled) await schedulePostSalahPrompts(todaysPrayerTimes);
+    }
+
+    scheduleInitialReminders().catch((error) =>
+      console.warn('[notifications] initial reminder scheduling failed:', error)
+    );
+  }, [notificationsGranted, postSalahPromptEnabled, reminderMinutesBefore, todaysPrayerTimes]);
 
   // Reload today's logs whenever this tab is focused
   useFocusEffect(
@@ -168,12 +216,9 @@ function SalahCard({
         {status === 'logged' && rating !== undefined && (
           <View className="flex-row gap-x-0.5">
             {[1, 2, 3, 4, 5].map((n) => (
-              <Text
-                key={n}
-                className={`text-xs ${n <= rating ? 'text-sage-600' : 'text-sand-300'}`}
-              >
-                ★
-              </Text>
+              n <= rating
+                ? <StarSolidIcon key={n} size={12} color="#5A7A5A" />
+                : <StarIcon key={n} size={12} color="#DDD0BA" />
             ))}
           </View>
         )}

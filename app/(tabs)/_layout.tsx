@@ -1,6 +1,8 @@
 import { Tabs } from 'expo-router';
-import { Text } from 'react-native';
+import { Text } from '@/components/ui/Typography';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ArrowTrendingUpIcon, Cog6ToothIcon, HomeIcon, PencilSquareIcon } from 'react-native-heroicons/outline';
+import { ArrowTrendingUpIcon as ArrowTrendingUpSolidIcon, Cog6ToothIcon as Cog6ToothSolidIcon, HomeIcon as HomeSolidIcon, PencilSquareIcon as PencilSquareSolidIcon } from 'react-native-heroicons/solid';
 
 function TabIcon({ focused, label }: { focused: boolean; label: string }) {
   return (
@@ -36,36 +38,28 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ focused }) => (
-            <Text style={{ fontSize: 20 }}>{focused ? '🕌' : '🕌'}</Text>
-          ),
+          tabBarIcon: ({ color, focused }) => focused ? <HomeSolidIcon size={20} color={color} /> : <HomeIcon size={20} color={color} />,
         }}
       />
       <Tabs.Screen
         name="log"
         options={{
           title: 'Log',
-          tabBarIcon: ({ focused }) => (
-            <Text style={{ fontSize: 20 }}>📝</Text>
-          ),
+          tabBarIcon: ({ color, focused }) => focused ? <PencilSquareSolidIcon size={20} color={color} /> : <PencilSquareIcon size={20} color={color} />,
         }}
       />
       <Tabs.Screen
         name="insights"
         options={{
           title: 'Insights',
-          tabBarIcon: ({ focused }) => (
-            <Text style={{ fontSize: 20 }}>📊</Text>
-          ),
+          tabBarIcon: ({ color, focused }) => focused ? <ArrowTrendingUpSolidIcon size={20} color={color} /> : <ArrowTrendingUpIcon size={20} color={color} />,
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
           title: 'Settings',
-          tabBarIcon: ({ focused }) => (
-            <Text style={{ fontSize: 20 }}>⚙️</Text>
-          ),
+          tabBarIcon: ({ color, focused }) => focused ? <Cog6ToothSolidIcon size={20} color={color} /> : <Cog6ToothIcon size={20} color={color} />,
         }}
       />
     </Tabs>

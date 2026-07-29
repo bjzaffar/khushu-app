@@ -1,14 +1,15 @@
 import {
   View,
-  Text,
   ScrollView,
   Pressable,
-  TextInput,
   KeyboardAvoidingView,
   Platform,
   Modal,
   Animated,
 } from 'react-native';
+import { Text, TextInput } from '@/components/ui/Typography';
+import { ArrowUturnUpIcon, LockClosedIcon, StarIcon, XMarkIcon } from 'react-native-heroicons/outline';
+import { CheckCircleIcon as CheckCircleSolidIcon, StarIcon as StarSolidIcon } from 'react-native-heroicons/solid';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
@@ -76,7 +77,7 @@ function getSettingJSON(key: string): unknown[] {
 
 export default function LogScreen() {
   const params = useLocalSearchParams<{ salah?: string; fromSalahMode?: string }>();
-  const { todaysPrayerTimes, userId, premiumStatus } = useAppStore();
+  const { todaysPrayerTimes, userId } = useAppStore();
   const isPremium = useAppStore(selectIsPremium);
 
   const resolveInitialSalah = useCallback((day: LogDay, allowNavigationIntent = false): SalahName => {
@@ -132,6 +133,14 @@ export default function LogScreen() {
   const starsContainerXRef = useRef(0);
   const starsContainerWidthRef = useRef(0);
 
+  const setRatingFromPointer = useCallback((pageX: number) => {
+    const width = starsContainerWidthRef.current;
+    if (width === 0) return;
+    const relativeX = pageX - starsContainerXRef.current;
+    const rating = Math.min(5, Math.max(1, Math.ceil(relativeX / (width / 5))));
+    setFocusRating(rating);
+  }, []);
+
   // Load custom/hidden from SQLite once on mount
   useEffect(() => {
     const customRow = db.select().from(settings).where(eq(settings.key, 'custom_distractions')).get();
@@ -147,12 +156,12 @@ export default function LogScreen() {
   // The root layout archives on downgrade. Mirror that change into this
   // mounted tab immediately so free users cannot keep selecting old customs.
   useEffect(() => {
-    if (premiumStatus !== 'free') return;
+    if (isPremium) return;
     archiveActiveCustomDistractions();
     setCustomDistractions([]);
     setSelectedDistractions((current) => current.filter((key) => !key.startsWith('custom_')));
     setEditMode(false);
-  }, [premiumStatus]);
+  }, [isPremium]);
 
   const loadLogsForDay = useCallback((day: LogDay) => {
     const logs = db
@@ -440,7 +449,7 @@ export default function LogScreen() {
       <SafeAreaView className="flex-1 bg-sand-100 items-center justify-center px-8">
         <View className="items-center gap-y-6">
           <View className="w-16 h-16 rounded-full bg-sage-600 items-center justify-center">
-            <Text className="text-white text-2xl font-semibold">✓</Text>
+            <CheckCircleSolidIcon size={28} color="#FFFFFF" />
           </View>
           <Text className="text-ink-900 text-xl font-semibold text-center">
             {SALAH_DISPLAY_NAMES[savedSalahName]} logged.
@@ -570,7 +579,7 @@ export default function LogScreen() {
           {showAllSalahsLogged ? (
             <View className="items-center py-10 gap-y-4">
               <View className="w-16 h-16 rounded-full bg-sage-600 items-center justify-center">
-                <Text className="text-white text-2xl font-semibold">{'\u2713'}</Text>
+                <CheckCircleSolidIcon size={28} color="#FFFFFF" />
               </View>
               <Text className="text-ink-900 text-xl font-semibold text-center">
                 All the Salahs for {activeDay} have been logged.
@@ -592,38 +601,21 @@ export default function LogScreen() {
                     starsContainerWidthRef.current = width;
                   });
                 }}
-                onTouchStart={(e) => {
-                  const w = starsContainerWidthRef.current;
-                  if (w === 0) return;
-                  const relX = e.nativeEvent.pageX - starsContainerXRef.current;
-                  const segWidth = w / 5;
-                  const idx = Math.min(5, Math.max(1, Math.ceil(relX / segWidth)));
-                  setFocusRating(idx);
-                }}
-                onTouchMove={(e) => {
-                  const w = starsContainerWidthRef.current;
-                  if (w === 0) return;
-                  const relX = e.nativeEvent.pageX - starsContainerXRef.current;
-                  const segWidth = w / 5;
-                  const idx = Math.min(5, Math.max(1, Math.ceil(relX / segWidth)));
-                  setFocusRating(idx);
-                }}
+                onStartShouldSetResponderCapture={() => true}
+                onMoveShouldSetResponderCapture={() => true}
+                onResponderGrant={(e) => setRatingFromPointer(e.nativeEvent.pageX)}
+                onResponderMove={(e) => setRatingFromPointer(e.nativeEvent.pageX)}
               >
                 {[1, 2, 3, 4, 5].map((n) => (
-                  <Pressable
+                  <View
                     key={n}
-                    onPress={() => setFocusRating(n)}
                     className="items-center gap-y-1"
                   >
-                    <Text
-                      className={`text-3xl ${
-                        n <= focusRating ? 'text-sage-600' : 'text-sand-300'
-                      }`}
-                    >
-                      ★
-                    </Text>
+                    {n <= focusRating
+                      ? <StarSolidIcon size={30} color="#5A7A5A" />
+                      : <StarIcon size={30} color="#DDD0BA" />}
                     <Text className="text-ink-300 text-xs">{n}</Text>
-                  </Pressable>
+                  </View>
                 ))}
               </View>
               {focusRating > 0 && (
@@ -653,7 +645,7 @@ export default function LogScreen() {
                 </Pressable>
               ) : (
                 <Pressable onPress={() => router.push('/paywall')}>
-                  <Text className="text-ink-300 text-xs font-medium">Edit 🔒</Text>
+                  <View className="flex-row items-center gap-x-1"><Text className="text-ink-300 text-xs font-medium">Edit</Text><LockClosedIcon size={12} color="#9B9189" /></View>
                 </Pressable>
               )}
             </View>
@@ -670,7 +662,7 @@ export default function LogScreen() {
                       <View key={key} className="py-2 px-3 rounded-xl bg-sand-200 flex-row items-center">
                         <Text className="text-ink-700 text-sm font-medium">{label}</Text>
                         <Pressable onPress={() => handleHideBuiltin(key)} hitSlop={8} className="ml-1.5">
-                          <Text className="text-ink-400 text-xs">✕</Text>
+                          <XMarkIcon size={12} color="#9B9189" />
                         </Pressable>
                       </View>
                     );
@@ -696,7 +688,7 @@ export default function LogScreen() {
                     <View key={key} className="py-2 px-3 rounded-xl bg-sand-200 flex-row items-center">
                       <Text className="text-ink-700 text-sm font-medium">{label}</Text>
                       <Pressable onPress={() => handleDeleteCustom(key)} hitSlop={8} className="ml-1.5">
-                        <Text className="text-red-400 text-xs">✕</Text>
+                        <XMarkIcon size={12} color="#F87171" />
                       </Pressable>
                     </View>
                   );
@@ -747,14 +739,14 @@ export default function LogScreen() {
                       >
                         <Pressable onPress={() => handleReactivate(key)} className="flex-row items-center">
                           <Text className="text-ink-400 text-sm">{label}</Text>
-                          <Text className="text-sage-600 text-xs ml-1.5">↻</Text>
+                          <ArrowUturnUpIcon size={12} color="#5A7A5A" style={{ marginLeft: 6 }} />
                         </Pressable>
                         <Pressable
                           onPress={() => setDeleteArchived({ key, label })}
                           hitSlop={8}
                           className="ml-1"
                         >
-                          <Text className="text-red-400 text-xs">✕</Text>
+                          <XMarkIcon size={12} color="#F87171" />
                         </Pressable>
                       </View>
                     ))}

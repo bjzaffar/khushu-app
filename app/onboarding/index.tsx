@@ -1,6 +1,9 @@
-import { View, Text, Pressable } from 'react-native';
+import { Image, View, Pressable } from 'react-native';
+import { Text } from '@/components/ui/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { MagnifyingGlassIcon, PencilSquareIcon } from 'react-native-heroicons/outline';
+import type { ReactNode } from 'react';
 
 export default function OnboardingWelcome() {
   return (
@@ -8,7 +11,7 @@ export default function OnboardingWelcome() {
       <View className="flex-1 px-8 justify-between py-16">
         {/* Top — logo area */}
         <View className="items-center">
-          <Text className="text-6xl mb-4">🕌</Text>
+          <Image source={require('../../assets/images/khushu-ai-icon.jpeg')} className="w-16 h-16 rounded-2xl mb-4" />
           <Text className="text-3xl font-semibold text-ink-900 tracking-tight">
             Khushu App
           </Text>
@@ -20,17 +23,17 @@ export default function OnboardingWelcome() {
         {/* Middle — explanation */}
         <View className="gap-y-6">
           <OnboardingPoint
-            icon="📝"
+            icon={<PencilSquareIcon size={24} color="#3D3A37" />}
             title="Reflect after each Salah"
             body="Rate your focus, note what pulled you away. No judgment — just awareness."
           />
           <OnboardingPoint
-            icon="🔍"
+            icon={<MagnifyingGlassIcon size={24} color="#3D3A37" />}
             title="Discover your patterns"
             body="Over time, the app learns when and why your mind wanders — without fabricating anything."
           />
           <OnboardingPoint
-            icon="🤲"
+            icon={<Text className="text-2xl">🤲</Text>}
             title="Receive gentle reminders"
             body="Before each Salah, a quiet prompt to help you arrive fully present."
           />
@@ -58,13 +61,13 @@ function OnboardingPoint({
   title,
   body,
 }: {
-  icon: string;
+  icon: ReactNode;
   title: string;
   body: string;
 }) {
   return (
     <View className="flex-row gap-x-4 items-start">
-      <Text className="text-2xl mt-0.5">{icon}</Text>
+      <View className="mt-0.5">{icon}</View>
       <View className="flex-1">
         <Text className="text-ink-700 font-semibold text-base mb-1">{title}</Text>
         <Text className="text-ink-300 text-sm leading-relaxed">{body}</Text>

@@ -1,4 +1,5 @@
-import { View, Text, Pressable, StatusBar, Platform, NativeModules } from 'react-native';
+import { View, Pressable, StatusBar, Platform, NativeModules } from 'react-native';
+import { Text } from '@/components/ui/Typography';
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { useKeepAwake } from 'expo-keep-awake';
@@ -122,7 +123,7 @@ export default function SalahModeScreen() {
 
       <View className="items-center gap-y-6 mb-20">
         <Text className="text-6xl">🤲</Text>
-        <Text className="text-white text-xl font-medium text-center leading-relaxed">
+        <Text className="text-white text-3xl font-medium text-center leading-relaxed">
           {"Kindly do not disturb me,\nI am praying :)"}
         </Text>
         {activeSalah && (

@@ -1,4 +1,7 @@
-import { View, Text, Switch, Pressable, ScrollView, ActivityIndicator, Platform, Modal } from 'react-native';
+import { View, Switch, Pressable, ScrollView, ActivityIndicator, Platform, Modal } from 'react-native';
+import { Text } from '@/components/ui/Typography';
+import { ArrowRightIcon } from 'react-native-heroicons/outline';
+import { CheckCircleIcon as CheckCircleSolidIcon } from 'react-native-heroicons/solid';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useCallback, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
@@ -22,6 +25,7 @@ import {
 } from '@/lib/notifications/notificationService';
 import { CALCULATION_METHODS, type CalculationMethodKey, type AsrMadhab } from '@/types';
 import { WheelPicker } from '@/components/ui/WheelPicker';
+import { clearRevenueCatUser, openRevenueCatCustomerCenter } from '@/lib/revenuecat/service';
 
 const MINUTE_VALUES = Array.from({ length: 60 }, (_, i) => i + 1); // 1–60
 
@@ -65,8 +69,6 @@ export default function SettingsScreen() {
     location,
     setTodaysPrayerTimes,
     userId,
-    setUserId,
-    setPremiumStatus,
   } = useAppStore();
   const isPremium = useAppStore(selectIsPremium);
 
@@ -218,19 +220,17 @@ export default function SettingsScreen() {
 
   async function confirmSignOut() {
     setShowSignOutModal(false);
+    await clearRevenueCatUser();
     await supabase.auth.signOut();
-    setUserId(null);
-    setPremiumStatus('free');
   }
 
   async function confirmDeleteAccount() {
     setShowFinalDeleteAccountModal(false);
     setShowDeleteAccountModal(false);
     try {
+      await clearRevenueCatUser();
       await supabase.rpc('delete_user');
       await supabase.auth.signOut();
-      setUserId(null);
-      setPremiumStatus('free');
     } catch {
       // silent — user will see auth state change
     }
@@ -426,7 +426,7 @@ export default function SettingsScreen() {
                       </View>
                       {selected && (
                         <View className="w-5 h-5 rounded-full bg-sage-600 items-center justify-center">
-                          <Text className="text-white text-xs font-bold">✓</Text>
+                          <CheckCircleSolidIcon size={14} color="#FFFFFF" />
                         </View>
                       )}
                     </Pressable>
@@ -492,7 +492,7 @@ export default function SettingsScreen() {
                     Sync your logs across devices and unlock Premium.
                   </Text>
                 </View>
-                <Text className="text-sage-600 text-sm font-medium">Sign in →</Text>
+                <View className="flex-row items-center gap-x-1"><Text className="text-sage-600 text-sm font-medium">Sign in</Text><ArrowRightIcon size={16} color="#5A7A5A" /></View>
               </Pressable>
               <Pressable
                 onPress={handleClearLogs}
@@ -515,18 +515,22 @@ export default function SettingsScreen() {
                   </View>
                 </View>
                 <Pressable
-                  onPress={() => router.push('/paywall')}
+                  onPress={() => {
+                    openRevenueCatCustomerCenter().catch((error) =>
+                      console.warn('[revenuecat] customer center failed:', error)
+                    );
+                  }}
                   className="px-5 py-4 flex-row justify-between items-center border-b border-sand-100 active:bg-sand-100"
                 >
                   <Text className="text-ink-700 font-medium text-sm">Manage subscription</Text>
-                  <Text className="text-sage-600 text-sm font-medium">→</Text>
+                  <ArrowRightIcon size={16} color="#5A7A5A" />
                 </Pressable>
                 <Pressable
                   onPress={() => router.push('/settings/change-password')}
                   className="px-5 py-4 flex-row justify-between items-center border-b border-sand-100 active:bg-sand-100"
                 >
                   <Text className="text-ink-700 font-medium text-sm">Change password</Text>
-                  <Text className="text-sage-600 text-sm font-medium">→</Text>
+                  <ArrowRightIcon size={16} color="#5A7A5A" />
                 </Pressable>
                 <Pressable
                   onPress={handleClearLogs}
@@ -559,14 +563,14 @@ export default function SettingsScreen() {
                       AI reminders personalised to your focus patterns.
                     </Text>
                   </View>
-                  <Text className="text-sage-600 text-sm font-medium">Upgrade →</Text>
+                  <View className="flex-row items-center gap-x-1"><Text className="text-sage-600 text-sm font-medium">Upgrade</Text><ArrowRightIcon size={16} color="#5A7A5A" /></View>
                 </Pressable>
                 <Pressable
                   onPress={() => router.push('/settings/change-password')}
                   className="px-5 py-4 flex-row justify-between items-center border-b border-sand-100 active:bg-sand-100"
                 >
                   <Text className="text-ink-700 font-medium text-sm">Change password</Text>
-                  <Text className="text-sage-600 text-sm font-medium">→</Text>
+                  <ArrowRightIcon size={16} color="#5A7A5A" />
                 </Pressable>
                 <Pressable
                   onPress={handleClearLogs}

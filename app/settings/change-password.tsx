@@ -1,11 +1,13 @@
 import {
-  View, Text, Pressable, ScrollView,
-  ActivityIndicator, KeyboardAvoidingView, Platform, TextInput,
+  View, Pressable, ScrollView,
+  ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
+import { Text, TextInput } from '@/components/ui/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useState, useEffect } from 'react';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { ArrowLeftIcon, EnvelopeIcon, KeyIcon, LockClosedIcon } from 'react-native-heroicons/outline';
 import { supabase } from '@/lib/supabase/client';
 
 type ScreenMode = 'send_link' | 'link_sent' | 'update_password';
@@ -98,14 +100,14 @@ export default function ChangePasswordScreen() {
 
             {/* ── Header ──────────────────────────────────────────────────── */}
             <Pressable onPress={() => router.back()} className="mb-4 self-start p-1 active:opacity-60">
-              <Text className="text-sage-600 text-sm font-medium">← Back</Text>
+              <View className="flex-row items-center gap-x-1"><ArrowLeftIcon size={16} color="#5A7A5A" /><Text className="text-sage-600 text-sm font-medium">Back</Text></View>
             </Pressable>
 
             {/* ── Step 1: Send reset link ────────────────────────────────── */}
             {mode === 'send_link' && (
               <View className="items-center gap-y-4 mt-8">
                 <View className="w-16 h-16 rounded-full bg-sage-600 items-center justify-center">
-                  <Text className="text-white text-2xl">🔒</Text>
+                  <LockClosedIcon size={24} color="#FFFFFF" />
                 </View>
                 <Text className="text-ink-700 font-medium text-base text-center">
                   Change your password
@@ -134,7 +136,7 @@ export default function ChangePasswordScreen() {
             {mode === 'link_sent' && (
               <View className="items-center gap-y-4 mt-8">
                 <View className="w-16 h-16 rounded-full bg-sage-600 items-center justify-center">
-                  <Text className="text-white text-2xl">✉</Text>
+                  <EnvelopeIcon size={24} color="#FFFFFF" />
                 </View>
                 <Text className="text-ink-700 font-medium text-base text-center">
                   Check your email
@@ -163,7 +165,7 @@ export default function ChangePasswordScreen() {
             {mode === 'update_password' && (
               <View className="items-center gap-y-4 mt-8">
                 <View className="w-16 h-16 rounded-full bg-sage-600 items-center justify-center">
-                  <Text className="text-white text-2xl">🔑</Text>
+                  <KeyIcon size={24} color="#FFFFFF" />
                 </View>
                 <Text className="text-ink-700 font-medium text-base text-center">
                   Set new password

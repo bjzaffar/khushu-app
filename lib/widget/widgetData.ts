@@ -89,9 +89,11 @@ export function buildHeatmapData(isPremium: boolean): HeatmapData {
   // Build a lookup: key = "YYYY-MM-DD|salahName" → rating
   const lookup = new Map<string, number>();
   for (const log of logs) {
-    const localLogDate = toISODate(new Date(log.loggedAt));
-    if (localLogDate >= weekStartStr && localLogDate <= weekEndStr) {
-      lookup.set(`${localLogDate}|${log.salahName}`, log.focusRating);
+    // `loggedAt` is when the entry was submitted. For backfilled entries that
+    // can be today even though the user selected yesterday, so the widget must
+    // use the persisted log date that defines which day the prayer belongs to.
+    if (log.logDate >= weekStartStr && log.logDate <= weekEndStr) {
+      lookup.set(`${log.logDate}|${log.salahName}`, log.focusRating);
     }
   }
 

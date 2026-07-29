@@ -1,11 +1,13 @@
 import {
-  View, Text, Pressable, TextInput, ScrollView,
+  View, Pressable, ScrollView,
   ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
+import { Text, TextInput } from '@/components/ui/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
+import { ArrowLeftIcon, CloudIcon, EnvelopeIcon, LockClosedIcon } from 'react-native-heroicons/outline';
 import { useAppStore } from '@/store/appStore';
 import { supabase } from '@/lib/supabase/client';
 import { syncLogsFromCloud } from '@/lib/supabase/sync';
@@ -30,8 +32,9 @@ function isNetworkError(error: unknown): boolean {
 // ─── component ────────────────────────────────────────────────────────────────
 
 export default function AccountScreen() {
-  // "from=settings" means we came from Settings, not onboarding
-  const { from } = useLocalSearchParams<{ from?: string }>();
+  // "from=settings" means we came from Settings, not onboarding.
+  // A guest upgrade returns here first, then resumes the authenticated paywall.
+  const { from, returnTo } = useLocalSearchParams<{ from?: string; returnTo?: string }>();
   const isFromSettings = from === 'settings';
 
   const { setHasCompletedOnboarding, setUserId } = useAppStore();
@@ -53,6 +56,8 @@ export default function AccountScreen() {
       await markOnboardingComplete();
       setHasCompletedOnboarding(true);
       router.replace('/(tabs)');
+    } else if (returnTo === 'paywall') {
+      router.replace('/paywall');
     } else {
       router.back();
     }
@@ -206,12 +211,12 @@ export default function AccountScreen() {
             <View>
               {isFromSettings && (
                 <Pressable onPress={() => router.back()} className="mb-4 self-start p-1 active:opacity-60">
-                  <Text className="text-sage-600 text-sm font-medium">← Back</Text>
+                  <View className="flex-row items-center gap-x-1"><ArrowLeftIcon size={16} color="#5A7A5A" /><Text className="text-sage-600 text-sm font-medium">Back</Text></View>
                 </Pressable>
               )}
 
               <View className="items-center gap-y-2 mb-8">
-                <Text className="text-4xl">☁️</Text>
+                <CloudIcon size={32} color="#3D3A37" />
                 <Text className="text-2xl font-semibold text-ink-900 text-center">
                   {isFromSettings ? 'Sign in' : 'Sync your reflections'}
                 </Text>
@@ -243,7 +248,7 @@ export default function AccountScreen() {
               {status === 'confirm_email' && (
                 <View className="items-center gap-y-4 mb-6">
                   <View className="w-16 h-16 rounded-full bg-sage-600 items-center justify-center">
-                    <Text className="text-white text-2xl">✉</Text>
+                    <EnvelopeIcon size={24} color="#FFFFFF" />
                   </View>
                   <Text className="text-ink-700 font-medium text-base text-center">
                     Check your email
@@ -281,7 +286,7 @@ export default function AccountScreen() {
               {status === 'forgot_password' && (
                 <View className="items-center gap-y-4 mb-6">
                   <View className="w-16 h-16 rounded-full bg-sage-600 items-center justify-center">
-                    <Text className="text-white text-2xl">🔒</Text>
+                    <LockClosedIcon size={24} color="#FFFFFF" />
                   </View>
                   <Text className="text-ink-700 font-medium text-base text-center">
                     Reset your password
@@ -325,7 +330,7 @@ export default function AccountScreen() {
               {status === 'link_sent' && (
                 <View className="items-center gap-y-4 mb-6">
                   <View className="w-16 h-16 rounded-full bg-sage-600 items-center justify-center">
-                    <Text className="text-white text-2xl">✉</Text>
+                    <EnvelopeIcon size={24} color="#FFFFFF" />
                   </View>
                   <Text className="text-ink-700 font-medium text-base text-center">
                     Check your email

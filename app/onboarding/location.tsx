@@ -1,5 +1,7 @@
 import { useState, useCallback } from 'react';
-import { View, Text, Pressable, ActivityIndicator } from 'react-native';
+import { View, Pressable, ActivityIndicator } from 'react-native';
+import { Text } from '@/components/ui/Typography';
+import { MapPinIcon } from 'react-native-heroicons/outline';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { useAppStore } from '@/store/appStore';
@@ -27,8 +29,9 @@ export default function OnboardingLocation() {
         return;
       }
 
+      const prayerTimes = calculatePrayerTimes(coords);
       setLocation(coords);
-      setTodaysPrayerTimes(calculatePrayerTimes(coords));
+      setTodaysPrayerTimes(prayerTimes);
 
       db.insert(settings).values({ key: 'location_lat', value: String(coords.latitude) })
         .onConflictDoUpdate({ target: settings.key, set: { value: String(coords.latitude) } }).run();
@@ -51,7 +54,7 @@ export default function OnboardingLocation() {
       <View className="flex-1 px-8 justify-between py-16">
         {/* Header */}
         <View className="items-center gap-y-3">
-          <Text className="text-5xl">📍</Text>
+          <MapPinIcon size={48} color="#1A1917" />
           <Text className="text-2xl font-semibold text-ink-900 text-center">
             Prayer times for your location
           </Text>

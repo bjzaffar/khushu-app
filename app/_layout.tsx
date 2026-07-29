@@ -1,21 +1,28 @@
 import '../global.css';
 import { useEffect, useRef, useState } from 'react';
-import { View, Text } from 'react-native';
+import { AppState, View } from 'react-native';
+import { Text } from '@/components/ui/Typography';
 import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Notifications from 'expo-notifications';
+import {
+  PlusJakartaSans_400Regular,
+  PlusJakartaSans_500Medium,
+  PlusJakartaSans_600SemiBold,
+  PlusJakartaSans_700Bold,
+  useFonts,
+} from '@expo-google-fonts/plus-jakarta-sans';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { eq } from 'drizzle-orm';
-import { useAppStore } from '@/store/appStore';
+import { selectIsPremium, useAppStore } from '@/store/appStore';
 import { initDatabase, db } from '@/db/database';
 import { settings } from '@/db/schema';
 import * as SecureStore from 'expo-secure-store';
 import { calculatePrayerTimes } from '@/lib/prayer/prayerTimes';
 import {
   setupNotificationChannel,
-  requestNotificationPermissions,
   schedulePreSalahReminders,
   schedulePostSalahPrompts,
   scheduleWeeklySummaryNotification,
@@ -31,9 +38,13 @@ import { writeWidgetData } from '@/lib/widget/widgetData';
 import { setPendingUrl } from '@/lib/deeplink';
 import * as Linking from 'expo-linking';
 import { archiveActiveCustomDistractions } from '@/lib/customDistractions';
-
-const debugPremiumOverrideKey = (userId: string | null) =>
-  `debug_premium_override_${userId ?? 'anonymous'}`;
+import { readDebugPremiumOverride } from '@/lib/debug/premiumOverride';
+import {
+  clearRevenueCatUser,
+  configureRevenueCat,
+  identifyRevenueCatUser,
+  refreshPremiumStatus,
+} from '@/lib/revenuecat/service';
 
 // Capture the deep link URL IMMEDIATELY at module scope — before any async init blocks the navigator.
 // Without this, release builds lose the URL because the callback screen can't mount until
@@ -43,6 +54,12 @@ Linking.getInitialURL().then(setPendingUrl).catch(() => {});
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
+  const [fontsLoaded, fontError] = useFonts({
+    PlusJakartaSans_400Regular,
+    PlusJakartaSans_500Medium,
+    PlusJakartaSans_600SemiBold,
+    PlusJakartaSans_700Bold,
+  });
   const {
     isHydrated,
     setIsHydrated,
@@ -59,11 +76,14 @@ export default function RootLayout() {
     startSalahMode,
     setUserId,
     setPremiumStatus,
+    setDebugPremiumOverride,
     premiumStatus,
     isDbReady,
   } = useAppStore();
+  const isPremium = useAppStore(selectIsPremium);
   const [initError, setInitError] = useState<string | null>(null);
   const wasPremiumRef = useRef(false);
+  const authVersionRef = useRef(0);
 
   useEffect(() => {
     async function setup() {
@@ -76,26 +96,31 @@ export default function RootLayout() {
         await initDatabase();
         await setupNotificationChannel();
 
+        // Configure the purchase SDK before resolving identity. It remains a
+        // locked no-op until the Android public SDK key is supplied at build time.
+        await configureRevenueCat();
+
         // Rehydrate Supabase session
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
           setUserId(session.user.id);
+          setDebugPremiumOverride(readDebugPremiumOverride(session.user.id));
+          setPremiumStatus('unknown');
+          try {
+            await identifyRevenueCatUser(session.user.id);
+          } catch (error) {
+            console.warn('[revenuecat] startup identity failed:', error);
+            setPremiumStatus('free');
+          }
           // Never block startup when the device is offline. The durable queue
           // and connectivity listener will retry and refresh the cache later.
           syncLogsFromCloud(session.user.id).catch((error) =>
             console.warn('[supabase] startup log sync failed:', error)
           );
-        }
-
-        // Preserve the Debug-page entitlement override for this account across
-        // restarts. A production RevenueCat refresh can still replace it later.
-        const debugPremiumOverride = db
-          .select()
-          .from(settings)
-          .where(eq(settings.key, debugPremiumOverrideKey(session?.user?.id ?? null)))
-          .get();
-        if (debugPremiumOverride) {
-          setPremiumStatus(debugPremiumOverride.value === 'true' ? 'premium' : 'free');
+        } else {
+          setUserId(null);
+          setDebugPremiumOverride(readDebugPremiumOverride(null));
+          await clearRevenueCatUser();
         }
 
         // Rehydrate notification settings
@@ -128,8 +153,8 @@ export default function RootLayout() {
           const prayerTimes = calculatePrayerTimes(coords, new Date(), method, madhab);
           setTodaysPrayerTimes(prayerTimes);
 
-          const granted = await requestNotificationPermissions();
-          if (granted) {
+          const { status: notificationPermission } = await Notifications.getPermissionsAsync();
+          if (notificationPermission === 'granted') {
             await schedulePreSalahReminders(prayerTimes, minutesBefore);
             if (postEnabled) await schedulePostSalahPrompts(prayerTimes);
           }
@@ -152,65 +177,100 @@ export default function RootLayout() {
         setDbReady(true);
       } catch (e: unknown) {
         setInitError(e instanceof Error ? e.message : String(e));
-      } finally {
-        SplashScreen.hideAsync();
       }
     }
     setup();
   }, []);
 
-  // Keep userId in sync with Supabase auth state (sign in, sign out, token refresh)
+  // Keep the Supabase and RevenueCat identities in lockstep. Auth callbacks are
+  // serialized so an older asynchronous identity result cannot win a race.
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      setUserId(session?.user?.id ?? null);
-      try {
-        const debugPremiumOverride = db
-          .select()
-          .from(settings)
-          .where(eq(settings.key, debugPremiumOverrideKey(session?.user?.id ?? null)))
-          .get();
-        if (debugPremiumOverride) {
-          setPremiumStatus(debugPremiumOverride.value === 'true' ? 'premium' : 'free');
-        } else if (!session?.user) {
-          setPremiumStatus('free');
-        }
-      } catch {
-        // The startup callback can arrive before SQLite is initialized.
-        // setup() restores the override as soon as initialization completes.
+      const version = ++authVersionRef.current;
+
+      if (!session?.user || event === 'SIGNED_OUT') {
+        setUserId(null);
+        setDebugPremiumOverride(readDebugPremiumOverride(null));
         setPremiumStatus('free');
-      }
-      if (session?.user && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
-        // Supabase invokes this callback while holding its auth lock. Calling auth APIs
-        // from an async callback can deadlock setSession(), including recovery links.
-        // Queue the sync until after the callback and never let it block authentication.
-        const uid = session.user.id;
         setTimeout(() => {
+          clearRevenueCatUser();
+        }, 0);
+        return;
+      }
+
+      // Supabase invokes this callback while holding its auth lock. Calling auth APIs
+      // from an async callback can deadlock setSession(), including recovery links.
+      const uid = session.user.id;
+      setUserId(uid);
+      setDebugPremiumOverride(readDebugPremiumOverride(uid));
+      setPremiumStatus('unknown');
+      setTimeout(() => {
+        (async () => {
+          try {
+            await identifyRevenueCatUser(uid);
+          } catch (error) {
+            console.warn('[revenuecat] auth identity failed:', error);
+            if (authVersionRef.current === version) setPremiumStatus('free');
+          }
+          if (authVersionRef.current !== version) return;
           syncLogsFromCloud(uid).catch((error) =>
             console.warn('[supabase] post-auth log sync failed:', error)
           );
-        }, 0);
-      }
+        })();
+      }, 0);
     });
     return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (isHydrated && (fontsLoaded || fontError)) {
+      SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded, fontError, isHydrated]);
+
+  // Refresh entitlement state after returning from Google Play or the Customer
+  // Center. No refresh can grant access without RevenueCat CustomerInfo.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active' && useAppStore.getState().userId) {
+        refreshPremiumStatus();
+      }
+    });
+    return () => subscription.remove();
   }, []);
 
   // Widgets run outside React Native, so mirror every entitlement transition
   // into native shared storage. Unknown access is deliberately locked.
   useEffect(() => {
     if (!isDbReady) return;
-    writeWidgetData(premiumStatus === 'premium').catch((err) =>
+    writeWidgetData(isPremium).catch((err) =>
       console.warn('[widget] premium access sync failed:', err)
     );
-  }, [isDbReady, premiumStatus]);
+  }, [isDbReady, isPremium]);
+
+  // Rebuild future reminders after an entitlement transition so Premium
+  // customers receive the full pattern depth immediately after purchase.
+  useEffect(() => {
+    if (!isDbReady || (premiumStatus === 'unknown' && !isPremium)) return;
+    const { todaysPrayerTimes, reminderMinutesBefore } = useAppStore.getState();
+    if (!todaysPrayerTimes) return;
+    Notifications.getPermissionsAsync().then(({ status }) => {
+      if (status === 'granted') {
+        schedulePreSalahReminders(todaysPrayerTimes, reminderMinutesBefore).catch((error) =>
+          console.warn('[notifications] entitlement reschedule failed:', error)
+        );
+      }
+    });
+  }, [isDbReady, isPremium, premiumStatus]);
 
   // Downgrading removes custom distractions from new logging, but keeps their
   // labels and every historical log intact for Insights and later reactivation.
   useEffect(() => {
-    if (wasPremiumRef.current && premiumStatus === 'free') {
+    if (wasPremiumRef.current && !isPremium) {
       archiveActiveCustomDistractions();
     }
-    wasPremiumRef.current = premiumStatus === 'premium';
-  }, [premiumStatus]);
+    wasPremiumRef.current = isPremium;
+  }, [isPremium]);
 
   // Flush offline saves as soon as the device regains an internet connection.
   useEffect(() => {
@@ -266,8 +326,8 @@ export default function RootLayout() {
     );
   }
 
-  // Don't render anything until hydration determines the correct initial stack.
-  if (!isHydrated) return null;
+  // Don't render anything until hydration and font loading are complete.
+  if (!isHydrated || (!fontsLoaded && !fontError)) return null;
 
   return (
     <SafeAreaProvider>

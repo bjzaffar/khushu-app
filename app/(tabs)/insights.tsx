@@ -1,4 +1,6 @@
-import { View, Text, ScrollView, Modal, Pressable } from 'react-native';
+import { View, ScrollView, Modal, Pressable } from 'react-native';
+import { Text } from '@/components/ui/Typography';
+import { BookOpenIcon, LockClosedIcon } from 'react-native-heroicons/outline';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useCallback, useState, useEffect, useRef } from 'react';
 import { useFocusEffect, router } from 'expo-router';
@@ -458,7 +460,7 @@ function Dropdown<T extends string>({
                         {opt.label}
                       </Text>
                       {locked ? (
-                        <Text style={{ fontSize: 14 }}>🔒</Text>
+                        <LockClosedIcon size={14} color={C.ink700} />
                       ) : (
                         <View
                           style={{
@@ -748,7 +750,7 @@ export default function InsightsScreen() {
 
         {isEmpty ? (
           <View className="bg-white rounded-2xl border border-sand-200 p-6 items-center gap-y-3">
-            <Text className="text-3xl">📖</Text>
+            <BookOpenIcon size={30} color={C.ink700} />
             <Text className="text-ink-700 font-medium text-base text-center">
               Not enough data yet
             </Text>
@@ -912,7 +914,7 @@ export default function InsightsScreen() {
                     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
                     alignItems: 'center', justifyContent: 'center', gap: 6,
                   }}>
-                    <Text style={{ fontSize: 18 }}>🔒</Text>
+                    <LockClosedIcon size={18} color={C.ink700} />
                     <Text style={{ fontSize: 13, fontWeight: '600', color: C.ink700 }}>Premium</Text>
                     <Text style={{ fontSize: 12, color: C.ink300 }}>Tap to unlock per-prayer insights</Text>
                   </View>

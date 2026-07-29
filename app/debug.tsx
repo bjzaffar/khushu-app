@@ -1,15 +1,17 @@
-import { View, Text, TextInput, Pressable, ScrollView, ActivityIndicator, Alert, Switch } from 'react-native';
+import { View, Pressable, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { Text, TextInput } from '@/components/ui/Typography';
+import { CheckCircleIcon as CheckCircleSolidIcon } from 'react-native-heroicons/solid';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useState } from 'react';
 import { router } from 'expo-router';
 import { eq, and, gte, count, like } from 'drizzle-orm';
 import { db } from '@/db/database';
 import { settings, salahLogs } from '@/db/schema';
-import { useAppStore } from '@/store/appStore';
+import { selectIsPremium, useAppStore } from '@/store/appStore';
+import { writeDebugPremiumOverride } from '@/lib/debug/premiumOverride';
 import { classifyDistraction, generateAIReminder } from '@/lib/notifications/reminderContent';
 import { queueLogUpsert } from '@/lib/supabase/sync';
 import { schedulePreSalahReminders } from '@/lib/notifications/notificationService';
-import { writeWidgetData } from '@/lib/widget/widgetData';
 import {
   SALAH_NAMES,
   SALAH_DISPLAY_NAMES,
@@ -20,9 +22,6 @@ import {
 
 const DAY = 86_400_000;
 const DEFAULT_DISTRACTION_KEYS = Object.keys(DISTRACTION_LABELS) as DistractionKey[];
-const debugPremiumOverrideKey = (userId: string | null) =>
-  `debug_premium_override_${userId ?? 'anonymous'}`;
-
 function saveSetting(key: string, value: string) {
   db.insert(settings)
     .values({ key, value })
@@ -43,6 +42,11 @@ function saveSettingJSON(key: string, value: unknown) {
 type StatusStep = 'idle' | 'seeding' | 'classifying' | 'generating' | 'scheduling' | 'done' | 'error';
 
 export default function DebugScreen() {
+  return <DebugScreenContent />;
+}
+
+function DebugScreenContent() {
+
   const {
     todaysPrayerTimes,
     location,
@@ -50,9 +54,10 @@ export default function DebugScreen() {
     asrMadhab,
     reminderMinutesBefore,
     userId,
-    premiumStatus,
-    setPremiumStatus,
+    debugPremiumOverride,
+    setDebugPremiumOverride,
   } = useAppStore();
+  const isPremium = useAppStore(selectIsPremium);
 
   const [salah, setSalah] = useState<SalahName>('fajr');
   const [label, setLabel] = useState('');
@@ -61,12 +66,10 @@ export default function DebugScreen() {
   const [showSalahPicker, setShowSalahPicker] = useState(false);
   const [defaultDistraction, setDefaultDistraction] = useState<DistractionKey>('work');
 
-  function handlePremiumChange(enabled: boolean) {
-    saveSetting(debugPremiumOverrideKey(userId), enabled ? 'true' : 'false');
-    setPremiumStatus(enabled ? 'premium' : 'free');
-    writeWidgetData(enabled).catch((err) =>
-      console.warn('[widget] premium access update failed:', err)
-    );
+  function handlePremiumOverride() {
+    const nextValue = !debugPremiumOverride;
+    writeDebugPremiumOverride(userId, nextValue);
+    setDebugPremiumOverride(nextValue);
   }
 
   async function handleSeedDefaultDistraction() {
@@ -278,24 +281,27 @@ export default function DebugScreen() {
           </Pressable>
         </View>
 
-        <View className="mb-5">
-          <Text className="text-xs font-medium text-ink-300 uppercase tracking-widest mb-3">
+        <View className="mb-5 bg-white rounded-2xl border border-sand-200 p-5">
+          <Text className="text-xs font-medium text-ink-300 uppercase tracking-widest mb-2">
             Premium access
           </Text>
-          <View className="bg-white rounded-2xl border border-sand-200 px-5 py-4 flex-row items-center justify-between">
-            <View className="flex-1 mr-4">
-              <Text className="text-ink-700 font-medium text-sm">Enable Premium</Text>
-              <Text className="text-ink-300 text-xs mt-1">
-                Development override for testing premium features.
-              </Text>
-            </View>
-            <Switch
-              value={premiumStatus === 'premium'}
-              onValueChange={handlePremiumChange}
-              trackColor={{ false: '#DED7CD', true: '#82A882' }}
-              thumbColor="#FFFFFF"
-            />
-          </View>
+          <Text className="text-ink-700 text-sm mb-4">
+            {debugPremiumOverride
+              ? 'Debug override is enabled. RevenueCat remains unchanged.'
+              : isPremium
+                ? 'Active through RevenueCat.'
+                : 'Inactive (RevenueCat is the source of truth).'}
+          </Text>
+          <Pressable
+            onPress={handlePremiumOverride}
+            className={`rounded-2xl px-5 py-4 items-center ${
+              debugPremiumOverride ? 'bg-sand-200 active:bg-sand-300' : 'bg-sage-600 active:bg-sage-700'
+            }`}
+          >
+            <Text className={`font-semibold text-sm ${debugPremiumOverride ? 'text-ink-700' : 'text-white'}`}>
+              {debugPremiumOverride ? 'Disable Premium Override' : 'Enable Premium Override'}
+            </Text>
+          </Pressable>
         </View>
 
         {/* Salah Picker */}
@@ -330,7 +336,7 @@ export default function DebugScreen() {
                     </Text>
                     {salah === name && (
                       <View className="w-5 h-5 rounded-full bg-sage-600 items-center justify-center">
-                        <Text className="text-white text-xs font-bold">✓</Text>
+                        <CheckCircleSolidIcon size={14} color="#FFFFFF" />
                       </View>
                     )}
                   </Pressable>
