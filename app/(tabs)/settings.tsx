@@ -331,7 +331,7 @@ export default function SettingsScreen() {
                 <View className="flex-1 pr-4">
                   <Text className="text-ink-700 font-medium text-sm">Silence during Salah Mode</Text>
                   <Text className="text-ink-300 text-xs mt-0.5">
-                    Automatically silences your phone when Salah Mode starts. (Android only)
+                    Automatically silences your phone when Salah Mode starts.
                   </Text>
                 </View>
                 <Switch

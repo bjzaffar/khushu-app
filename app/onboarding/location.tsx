@@ -54,7 +54,7 @@ export default function OnboardingLocation() {
       <View className="flex-1 px-8 justify-between py-16">
         {/* Header */}
         <View className="items-center gap-y-3">
-          <MapPinIcon size={48} color="#1A1917" />
+          <MapPinIcon size={48} color="#5A7A5A" />
           <Text className="text-2xl font-semibold text-ink-900 text-center">
             Prayer times for your location
           </Text>

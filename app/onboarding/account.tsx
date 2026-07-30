@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
+import Svg, { Path } from 'react-native-svg';
 import { ArrowLeftIcon, CloudIcon, EnvelopeIcon, LockClosedIcon } from 'react-native-heroicons/outline';
 import { useAppStore } from '@/store/appStore';
 import { supabase } from '@/lib/supabase/client';
@@ -21,6 +22,17 @@ async function markOnboardingComplete() {
 
 type Tab = 'signin' | 'signup';
 type Status = 'idle' | 'loading' | 'error' | 'confirm_email' | 'forgot_password' | 'link_sent';
+
+function GoogleLogo() {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 18 18" accessibilityLabel="Google">
+      <Path fill="#4285F4" d="M17.64 9.205c0-.638-.057-1.252-.164-1.841H9v3.481h4.844c-.209 1.125-.843 2.078-1.797 2.716v2.259h2.909c1.703-1.568 2.684-3.874 2.684-6.615z" />
+      <Path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.909-2.259c-.806.54-1.837.86-3.047.86-2.344 0-4.328-1.585-5.037-3.711H.956v2.333A9 9 0 0 0 9 18z" />
+      <Path fill="#FBBC05" d="M3.963 10.71A5.41 5.41 0 0 1 3.682 9c0-.594.102-1.172.281-1.71V4.957H.956A9 9 0 0 0 0 9c0 1.453.348 2.83.956 4.043l3.007-2.333z" />
+      <Path fill="#EA4335" d="M9 3.58c1.322 0 2.508.455 3.44 1.347l2.581-2.581C13.463.891 11.43 0 9 0A9 9 0 0 0 .956 4.957L3.963 7.29C4.672 5.165 6.656 3.58 9 3.58z" />
+    </Svg>
+  );
+}
 
 function isNetworkError(error: unknown): boolean {
   const details = error instanceof Error
@@ -216,7 +228,7 @@ export default function AccountScreen() {
               )}
 
               <View className="items-center gap-y-2 mb-8">
-                <CloudIcon size={32} color="#3D3A37" />
+                <CloudIcon size={32} color="#5A7A5A" />
                 <Text className="text-2xl font-semibold text-ink-900 text-center">
                   {isFromSettings ? 'Sign in' : 'Sync your reflections'}
                 </Text>
@@ -247,8 +259,8 @@ export default function AccountScreen() {
               {/* ── Email confirmation screen ─────────────────────────────── */}
               {status === 'confirm_email' && (
                 <View className="items-center gap-y-4 mb-6">
-                  <View className="w-16 h-16 rounded-full bg-sage-600 items-center justify-center">
-                    <EnvelopeIcon size={24} color="#FFFFFF" />
+                  <View className="w-16 h-16 rounded-full bg-sage-100 items-center justify-center">
+                    <EnvelopeIcon size={24} color="#5A7A5A" />
                   </View>
                   <Text className="text-ink-700 font-medium text-base text-center">
                     Check your email
@@ -285,8 +297,8 @@ export default function AccountScreen() {
               {/* ── Forgot password: enter email ─────────────────────────── */}
               {status === 'forgot_password' && (
                 <View className="items-center gap-y-4 mb-6">
-                  <View className="w-16 h-16 rounded-full bg-sage-600 items-center justify-center">
-                    <LockClosedIcon size={24} color="#FFFFFF" />
+                  <View className="w-16 h-16 rounded-full bg-sage-100 items-center justify-center">
+                    <LockClosedIcon size={24} color="#5A7A5A" />
                   </View>
                   <Text className="text-ink-700 font-medium text-base text-center">
                     Reset your password
@@ -329,8 +341,8 @@ export default function AccountScreen() {
               {/* ── Forgot password: link sent ────────────────────────────── */}
               {status === 'link_sent' && (
                 <View className="items-center gap-y-4 mb-6">
-                  <View className="w-16 h-16 rounded-full bg-sage-600 items-center justify-center">
-                    <EnvelopeIcon size={24} color="#FFFFFF" />
+                  <View className="w-16 h-16 rounded-full bg-sage-100 items-center justify-center">
+                    <EnvelopeIcon size={24} color="#5A7A5A" />
                   </View>
                   <Text className="text-ink-700 font-medium text-base text-center">
                     Check your email
@@ -442,7 +454,7 @@ export default function AccountScreen() {
                   disabled={status === 'loading'}
                   className="bg-white border border-sand-200 py-3.5 rounded-2xl flex-row items-center justify-center gap-x-2 active:bg-sand-100"
                 >
-                  <Text className="text-lg">G</Text>
+                  <GoogleLogo />
                   <Text className="text-ink-700 font-medium text-sm">Continue with Google</Text>
                 </Pressable>
               </View>

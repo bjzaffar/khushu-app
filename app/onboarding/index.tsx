@@ -2,7 +2,7 @@ import { Image, View, Pressable } from 'react-native';
 import { Text } from '@/components/ui/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { MagnifyingGlassIcon, PencilSquareIcon } from 'react-native-heroicons/outline';
+import { ArrowTrendingUpIcon, PencilSquareIcon, SunIcon } from 'react-native-heroicons/outline';
 import type { ReactNode } from 'react';
 
 export default function OnboardingWelcome() {
@@ -23,17 +23,17 @@ export default function OnboardingWelcome() {
         {/* Middle — explanation */}
         <View className="gap-y-6">
           <OnboardingPoint
-            icon={<PencilSquareIcon size={24} color="#3D3A37" />}
+            icon={<PencilSquareIcon size={24} color="#5A7A5A" />}
             title="Reflect after each Salah"
             body="Rate your focus, note what pulled you away. No judgment — just awareness."
           />
           <OnboardingPoint
-            icon={<MagnifyingGlassIcon size={24} color="#3D3A37" />}
+            icon={<ArrowTrendingUpIcon size={24} color="#5A7A5A" />}
             title="Discover your patterns"
             body="Over time, the app learns when and why your mind wanders — without fabricating anything."
           />
           <OnboardingPoint
-            icon={<Text className="text-2xl">🤲</Text>}
+            icon={<SunIcon size={24} color="#5A7A5A" />}
             title="Receive gentle reminders"
             body="Before each Salah, a quiet prompt to help you arrive fully present."
           />

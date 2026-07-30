@@ -6,6 +6,7 @@ import {
   Platform,
   Modal,
   Animated,
+  Easing,
 } from 'react-native';
 import { Text, TextInput } from '@/components/ui/Typography';
 import { ArrowUturnUpIcon, LockClosedIcon, StarIcon, XMarkIcon } from 'react-native-heroicons/outline';
@@ -106,12 +107,11 @@ export default function LogScreen() {
   const [selectedSalah, setSelectedSalah] = useState<SalahName>(() => resolveInitialSalah('today', true));
   const lastIntentSalahRef = useRef<SalahName | null>(null);
   const scrollRef = useRef<ScrollView>(null);
-  const dayPagerRef = useRef<ScrollView>(null);
-  const [dayPagerWidth, setDayPagerWidth] = useState(0);
   const dayTransition = useRef(new Animated.Value(1)).current;
   const [dayTransitionDirection, setDayTransitionDirection] = useState(0);
   useScrollToTop(scrollRef);
   const [focusRating, setFocusRating] = useState(0);
+  const [isRatingGestureActive, setIsRatingGestureActive] = useState(false);
   const [selectedDistractions, setSelectedDistractions] = useState<string[]>([]);
   const [saved, setSaved] = useState(false);
   const [savedSalahName, setSavedSalahName] = useState<SalahName>('fajr');
@@ -201,47 +201,31 @@ export default function LogScreen() {
     if (day === activeDay) return;
     const direction = day === 'yesterday' ? -1 : 1;
     setDayTransitionDirection(direction);
+    dayTransition.stopAnimation();
+    dayTransition.setValue(0);
+    setDisplayedDay(day);
+    handleDayChange(day);
 
     Animated.timing(dayTransition, {
-      toValue: 0,
-      duration: 100,
+      toValue: 1,
+      duration: 360,
+      easing: Easing.inOut(Easing.quad),
       useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (!finished) return;
-      setDisplayedDay(day);
-      handleDayChange(day);
-      dayTransition.setValue(0);
-      requestAnimationFrame(() => {
-        Animated.timing(dayTransition, {
-          toValue: 1,
-          duration: 160,
-          useNativeDriver: true,
-        }).start();
-      });
-    });
+    }).start();
   }, [activeDay, dayTransition, handleDayChange]);
 
-  useEffect(() => {
-    if (dayPagerWidth === 0) return;
-    dayPagerRef.current?.scrollTo({
-      x: activeDay === 'yesterday' ? 0 : dayPagerWidth,
-      animated: false,
-    });
-  }, [activeDay, dayPagerWidth]);
-
-  // When screen gains focus, always open Today on its first unlogged salah.
+  // When screen gains focus, refresh its log data and target the first unlogged salah.
+  // Reset the form on blur instead, so returning never briefly renders stale form state.
   // If navigation params carry a new intent (salah mode / notification),
   // consume it once and then clear so stale params don't override on tab re-open.
   useFocusEffect(
     useCallback(() => {
-      setSaved(false);
       const today = loadLogsForDay('today');
       const yesterday = loadLogsForDay('yesterday');
       setLogsByDay({ today: today.map, yesterday: yesterday.map });
       setActiveDay('today');
       setDisplayedDay('today');
       dayTransition.setValue(1);
-      resetFormForDay('today', today.map);
 
       const loggedSet = new Set(today.logs.map((l) => l.salahName));
       const firstUnlogged = SALAH_NAMES.find((name) => !loggedSet.has(name));
@@ -258,10 +242,24 @@ export default function LogScreen() {
       } else if (firstUnlogged) {
         setSelectedSalah(firstUnlogged);
       }
+
+      return () => {
+        setActiveDay('today');
+        setDisplayedDay('today');
+        dayTransition.setValue(1);
+        resetFormForDay('today');
+        setShowOtherInput(false);
+        setOtherInputText('');
+        setIsRatingGestureActive(false);
+        setRelogSalah(null);
+        setDeleteArchived(null);
+      };
     }, [dayTransition, loadLogsForDay, params.salah, resetFormForDay])
   );
 
   function toggleDistraction(key: string) {
+    setShowOtherInput(false);
+    setOtherInputText('');
     setSelectedDistractions((prev) =>
       prev.includes(key) ? [] : [key]
     );
@@ -485,30 +483,13 @@ export default function LogScreen() {
           className="flex-1"
           contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 }}
           keyboardShouldPersistTaps="handled"
+          scrollEnabled={!isRatingGestureActive}
         >
           <Text className="text-2xl font-semibold text-ink-900 mb-5">Log Salah</Text>
 
-          <View
-            className="mb-7"
-            onLayout={(event) => setDayPagerWidth(event.nativeEvent.layout.width)}
-          >
-            <ScrollView
-              ref={dayPagerRef}
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              onMomentumScrollEnd={(event) => {
-                if (dayPagerWidth === 0) return;
-                const page = Math.round(event.nativeEvent.contentOffset.x / dayPagerWidth);
-                transitionToDay(page === 0 ? 'yesterday' : 'today');
-              }}
-            >
-              <View style={{ width: dayPagerWidth, height: 28 }} />
-              <View style={{ width: dayPagerWidth, height: 28 }} />
-            </ScrollView>
-            <Animated.Text
-              pointerEvents="none"
-              className="absolute self-center text-lg font-semibold text-ink-900"
+          <View className="mb-7 items-center">
+            <Animated.View
+              className="flex-row items-center gap-x-1"
               style={{
                 opacity: dayTransition,
                 transform: [{
@@ -519,23 +500,33 @@ export default function LogScreen() {
                 }],
               }}
             >
-              {DAY_LABELS[displayedDay]}
-            </Animated.Text>
-            <Animated.View
-              className={`absolute ${displayedDay === 'today' ? 'left-0' : 'right-0'}`}
-              style={{ opacity: dayTransition }}
-            >
-              <Pressable
-                onPress={() => transitionToDay(displayedDay === 'today' ? 'yesterday' : 'today')}
-                hitSlop={12}
-                className="py-1 px-2"
-                accessibilityRole="button"
-                accessibilityLabel={`Show ${displayedDay === 'today' ? 'yesterday' : 'today'}`}
-              >
-                <Text className="text-2xl leading-6 text-ink-500">
-                  {displayedDay === 'today' ? '‹' : '›'}
-                </Text>
-              </Pressable>
+              {displayedDay === 'today' && (
+                <Pressable
+                  onPress={() => transitionToDay('yesterday')}
+                  hitSlop={12}
+                  className="w-6 py-1 items-center"
+                  accessibilityRole="button"
+                  accessibilityLabel="Show yesterday"
+                >
+                  <Text className="text-2xl leading-6 text-ink-500">‹</Text>
+                </Pressable>
+              )}
+              {displayedDay === 'yesterday' && <View className="w-6" />}
+              <Text className="text-lg font-semibold text-ink-900">
+                {DAY_LABELS[displayedDay]}
+              </Text>
+              {displayedDay === 'today' && <View className="w-6" />}
+              {displayedDay === 'yesterday' && (
+                <Pressable
+                  onPress={() => transitionToDay('today')}
+                  hitSlop={12}
+                  className="w-6 py-1 items-center"
+                  accessibilityRole="button"
+                  accessibilityLabel="Show today"
+                >
+                  <Text className="text-2xl leading-6 text-ink-500">›</Text>
+                </Pressable>
+              )}
             </Animated.View>
           </View>
 
@@ -603,8 +594,14 @@ export default function LogScreen() {
                 }}
                 onStartShouldSetResponderCapture={() => true}
                 onMoveShouldSetResponderCapture={() => true}
-                onResponderGrant={(e) => setRatingFromPointer(e.nativeEvent.pageX)}
+                onResponderGrant={(e) => {
+                  setIsRatingGestureActive(true);
+                  setRatingFromPointer(e.nativeEvent.pageX);
+                }}
                 onResponderMove={(e) => setRatingFromPointer(e.nativeEvent.pageX)}
+                onResponderTerminationRequest={() => false}
+                onResponderRelease={() => setIsRatingGestureActive(false)}
+                onResponderTerminate={() => setIsRatingGestureActive(false)}
               >
                 {[1, 2, 3, 4, 5].map((n) => (
                   <View

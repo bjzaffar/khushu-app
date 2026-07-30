@@ -750,7 +750,7 @@ export default function InsightsScreen() {
 
         {isEmpty ? (
           <View className="bg-white rounded-2xl border border-sand-200 p-6 items-center gap-y-3">
-            <BookOpenIcon size={30} color={C.ink700} />
+            <BookOpenIcon size={30} color={C.sage} />
             <Text className="text-ink-700 font-medium text-base text-center">
               Not enough data yet
             </Text>
