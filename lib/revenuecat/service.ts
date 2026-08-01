@@ -15,8 +15,16 @@ export type RevenueCatOffering = PurchasesOffering;
 let configured = false;
 let customerInfoListenerRegistered = false;
 
-function isAndroidPurchaseSurface(): boolean {
-  return Platform.OS === 'android';
+function getRevenueCatApiKey(): string | null {
+  if (Platform.OS === 'android') {
+    return process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY?.trim() || null;
+  }
+
+  if (Platform.OS === 'ios') {
+    return process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY?.trim() || null;
+  }
+
+  return null;
 }
 
 function applyCustomerInfo(customerInfo: CustomerInfo): void {
@@ -30,11 +38,12 @@ function registerCustomerInfoListener(): void {
 }
 
 /**
- * Configures the native SDK once. Stage 3A intentionally enables Android only;
- * iOS and web remain locked until their respective purchase surfaces are added.
+ * Configures the native SDK once for a native purchase surface. A missing public
+ * SDK key leaves that platform safely locked rather than attempting a purchase.
  */
 export async function configureRevenueCat(): Promise<boolean> {
-  if (!isAndroidPurchaseSurface()) {
+  const apiKey = getRevenueCatApiKey();
+  if (!apiKey) {
     useAppStore.getState().setPremiumStatus('free');
     return false;
   }
@@ -43,13 +52,6 @@ export async function configureRevenueCat(): Promise<boolean> {
     configured = true;
     registerCustomerInfoListener();
     return true;
-  }
-
-  const apiKey = process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY?.trim();
-  if (!apiKey) {
-    console.warn('[revenuecat] Android public SDK key is not configured; purchases are locked.');
-    useAppStore.getState().setPremiumStatus('free');
-    return false;
   }
 
   if (__DEV__) {

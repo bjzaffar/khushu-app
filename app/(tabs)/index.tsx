@@ -88,6 +88,8 @@ export default function HomeScreen() {
   // Reload today's logs whenever this tab is focused
   useFocusEffect(
     useCallback(() => {
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
+
       async function loadLogs() {
         const today = new Date().toISOString().split('T')[0];
         const logs = await db

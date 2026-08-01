@@ -6,26 +6,25 @@ struct SalahHeatmapView: View {
     private let salahNames = ["fajr", "dhuhr", "asr", "maghrib", "isha"]
     private let dayLabels = ["M", "T", "W", "T", "F", "S", "S"]
 
-    // Figma proportions (637×259 canvas)
+    // Proportions shared with the Android 4x2 widget artwork.
     private let rowLabelWidthRatio: CGFloat = 0.19
     private let columnHeaderHeightRatio: CGFloat = 0.20
-    private let horizontalGapRatio: CGFloat = 2.5   // gap / cell width
-    private let verticalGapRatio: CGFloat = 0.9     // gap / cell height
-    private let cornerRadiusRatio: CGFloat = 0.2    // radius / cell size
-    private let underlineHeightRatio: CGFloat = 0.15 // underline / cell height
+    private let horizontalGapRatio: CGFloat = 2.5
+    private let verticalGapRatio: CGFloat = 0.9
+    private let cornerRadiusRatio: CGFloat = 0.2
+    private let underlineHeightRatio: CGFloat = 0.15
     private let underlineGapRatio: CGFloat = 0.12
 
-    // Colors
-    private let unloggedColor = Color(red: 0.773, green: 0.749, blue: 0.710) // #C5BFB5
-    private let textColor = Color(red: 0.443, green: 0.420, blue: 0.420)     // #716B6B
-    private let jumuahGold = Color(red: 0.788, green: 0.659, blue: 0.298)    // #C9A84C
+    private let unloggedColor = Color(red: 0.773, green: 0.725, blue: 0.659) // #C5B9A8
+    private let textColor = Color(red: 0.102, green: 0.098, blue: 0.090) // #1A1917
+    private let jumuahGold = Color(red: 0.788, green: 0.659, blue: 0.298) // #C9A84C
 
     private let greenScale = [
-        Color(red: 0.898, green: 0.929, blue: 0.898), // #E5EDE5  rating 1
-        Color(red: 0.753, green: 0.847, blue: 0.753), // #C0D8C0  rating 2
-        Color(red: 0.608, green: 0.761, blue: 0.608), // #9BC29B  rating 3
-        Color(red: 0.459, green: 0.675, blue: 0.459), // #75AC75  rating 4
-        Color(red: 0.353, green: 0.478, blue: 0.353), // #5A7A5A  rating 5
+        Color(red: 0.898, green: 0.929, blue: 0.898), // #E5EDE5
+        Color(red: 0.753, green: 0.847, blue: 0.753), // #C0D8C0
+        Color(red: 0.608, green: 0.761, blue: 0.608), // #9BC29B
+        Color(red: 0.459, green: 0.675, blue: 0.459), // #75AC75
+        Color(red: 0.353, green: 0.478, blue: 0.353), // #5A7A5A
     ]
 
     var body: some View {
@@ -38,10 +37,9 @@ struct SalahHeatmapView: View {
             let gridOrigin = CGPoint(x: rowLabelW, y: colHeaderH)
 
             ZStack(alignment: .topLeading) {
-                // Column headers
                 ForEach(0..<7, id: \.self) { col in
                     Text(dayLabels[col])
-                        .font(.system(size: cellSize * 0.75, weight: .bold))
+                        .font(.system(size: cellSize * 0.75, weight: .semibold))
                         .foregroundColor(textColor)
                         .frame(width: cellSize, height: colHeaderH)
                         .position(
@@ -50,10 +48,9 @@ struct SalahHeatmapView: View {
                         )
                 }
 
-                // Row labels
                 ForEach(0..<5, id: \.self) { row in
                     Text(salahNames[row].capitalized)
-                        .font(.system(size: cellSize * 0.80, weight: .bold))
+                        .font(.system(size: cellSize * 0.80, weight: .semibold))
                         .foregroundColor(textColor)
                         .frame(width: rowLabelW, height: cellSize)
                         .position(
@@ -62,13 +59,12 @@ struct SalahHeatmapView: View {
                         )
                 }
 
-                // Cells
-                ForEach(0..<35, id: \.self) { idx in
-                    let row = idx / 7
-                    let col = idx % 7
-                    // Widget data is ordered by day, then salah; the grid is
-                    // rendered by salah row, then day column.
-                    let cell = cells[col * 5 + row]
+                ForEach(0..<35, id: \.self) { index in
+                    let row = index / 7
+                    let col = index % 7
+                    let cell = cells.indices.contains(col * 5 + row)
+                        ? cells[col * 5 + row]
+                        : HeatmapCell(day: "", salah: "", rating: nil)
                     let x = gridOrigin.x + CGFloat(col) * (cellSize + hGap)
                     let y = gridOrigin.y + CGFloat(row) * (cellSize + vGap)
                     let isFridayDhuhr = col == 4 && row == 1
@@ -84,23 +80,17 @@ struct SalahHeatmapView: View {
     }
 
     private func computeCellSize(in size: CGSize) -> CGFloat {
-        let rowLabelW = size.width * rowLabelWidthRatio
-        let gridW = size.width - rowLabelW
-        let colHeaderH = size.height * columnHeaderHeightRatio
-        let gridH = size.height - colHeaderH
-
+        let gridW = size.width - (size.width * rowLabelWidthRatio)
+        let gridH = size.height - (size.height * columnHeaderHeightRatio)
         let cellFromWidth = gridW / (7 + 6 * horizontalGapRatio)
         let cellFromHeight = gridH / (5 + 4 * verticalGapRatio)
-
         return min(cellFromWidth, cellFromHeight)
     }
 
     @ViewBuilder
     private func cellView(cell: HeatmapCell, size: CGFloat, isFridayDhuhr: Bool) -> some View {
-        let radius = size * cornerRadiusRatio
-
         VStack(spacing: isFridayDhuhr ? size * underlineGapRatio : 0) {
-            RoundedRectangle(cornerRadius: radius)
+            RoundedRectangle(cornerRadius: size * cornerRadiusRatio)
                 .fill(cellColor(for: cell))
                 .frame(width: size, height: size)
 

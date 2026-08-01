@@ -1,6 +1,6 @@
 import {
   View, Pressable, ScrollView,
-  ActivityIndicator, KeyboardAvoidingView, Platform,
+  ActivityIndicator, KeyboardAvoidingView, Platform, Linking,
 } from 'react-native';
 import { Text, TextInput } from '@/components/ui/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -153,12 +153,17 @@ export default function AccountScreen() {
     setStatus('loading');
     setErrorMsg('');
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
-        options: { redirectTo: 'khushuai://auth/callback' },
+        options: {
+          redirectTo: 'khushuai://auth/callback',
+          skipBrowserRedirect: true,
+        },
       });
-      if (error) { setErrorMsg(error.message); setStatus('error'); }
-      // Navigation handled by deep-link listener in _layout.tsx (TODO Step 3c)
+      if (error) throw error;
+      if (!data.url) throw new Error('Google sign-in could not be started. Please try again.');
+      await Linking.openURL(data.url);
+      // The browser redirects back to auth/callback, where the session is completed.
     } catch {
       setErrorMsg('Could not open Google sign-in. Please try again.');
       setStatus('error');

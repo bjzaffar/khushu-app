@@ -98,6 +98,26 @@ function DebugScreenContent() {
         });
       }
 
+      // Startup refreshes the signed-in user's local cache from Supabase. Keep
+      // simulated entries in that source of truth too, otherwise that refresh
+      // removes them after the app is reopened.
+      if (userId) {
+        for (let i = 1; i <= 10; i++) {
+          const ts = now - i * DAY;
+          const date = new Date(ts).toISOString().split('T')[0];
+          await queueLogUpsert({
+            salahName: i <= 6 ? salah : otherSalahs[(i - 7) % otherSalahs.length],
+            focusRating: i <= 6 ? 2 : 3,
+            distractions: defaultDistraction,
+            loggedAt: ts,
+            logDate: date,
+            fromSalahMode: false,
+            reminderType: 'short',
+            reflectionText: debugMarker,
+          }, userId);
+        }
+      }
+
       const total = db.select({ total: count() }).from(salahLogs).get();
       setStatus('done');
       setStatusMsg(

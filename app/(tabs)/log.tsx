@@ -220,6 +220,8 @@ export default function LogScreen() {
   // consume it once and then clear so stale params don't override on tab re-open.
   useFocusEffect(
     useCallback(() => {
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
+
       const today = loadLogsForDay('today');
       const yesterday = loadLogsForDay('yesterday');
       setLogsByDay({ today: today.map, yesterday: yesterday.map });

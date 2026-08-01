@@ -11,7 +11,7 @@ export default function OnboardingWelcome() {
       <View className="flex-1 px-8 justify-between py-16">
         {/* Top — logo area */}
         <View className="items-center">
-          <Image source={require('../../assets/images/khushu-ai-icon.jpeg')} className="w-16 h-16 rounded-2xl mb-4" />
+          <Image source={require('../../assets/images/khushu-logo.png')} className="w-16 h-16 rounded-2xl mb-4" />
           <Text className="text-3xl font-semibold text-ink-900 tracking-tight">
             Khushu App
           </Text>

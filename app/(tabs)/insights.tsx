@@ -726,6 +726,8 @@ export default function InsightsScreen() {
   // Reload stats + chart whenever screen comes into focus
   useFocusEffect(
     useCallback(() => {
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
+
       loadData();
       const { salahFilter: f, timeframe: tf } = filtersRef.current;
       loadChartData(f, tf);

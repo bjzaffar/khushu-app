@@ -4,11 +4,11 @@
     "slug": "khushu-ai",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/khushu-ai-icon.jpeg",
+    "icon": "./assets/images/khushu-app-icon.png",
     "scheme": "khushuai",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/images/khushu-ai-icon.jpeg",
+      "image": "./assets/images/khushu-logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#F9F5EE"
     },
@@ -21,7 +21,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/khushu-ai-icon.jpeg",
+        "foregroundImage": "./assets/images/khushu-app-icon.png",
         "backgroundColor": "#F9F5EE"
       },
       "package": "com.khushuai.app",
@@ -39,7 +39,7 @@
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/khushu-ai-icon.jpeg"
+      "favicon": "./assets/images/khushu-app-icon.png"
     },
     "plugins": [
       "expo-router",
@@ -52,12 +52,13 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/images/khushu-ai-icon.jpeg",
+          "icon": "./assets/images/khushu-logo.png",
           "color": "#6B8F6B",
           "sounds": []
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "./plugins/with-salah-heatmap-widget"
     ],
     "experiments": {
       "typedRoutes": true

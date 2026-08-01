@@ -88,20 +88,28 @@ export default function RootLayout() {
   useEffect(() => {
     async function setup() {
       try {
-        // Rehydrate onboarding flag FIRST so the layout renders the correct stack
+        // Resolve the persistent completion state before rendering a navigator.
+        // An existing authenticated session also completes onboarding: users should
+        // never be sent through it again after having signed in.
         const onboardingVal = await SecureStore.getItemAsync('onboarding_complete');
-        if (onboardingVal === 'true') setHasCompletedOnboarding(true);
+        let onboardingComplete = onboardingVal === 'true';
+
+        // Rehydrate Supabase session
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user && !onboardingComplete) {
+          await SecureStore.setItemAsync('onboarding_complete', 'true');
+          onboardingComplete = true;
+        }
+        if (onboardingComplete) setHasCompletedOnboarding(true);
         setIsHydrated(true);
 
         await initDatabase();
         await setupNotificationChannel();
 
         // Configure the purchase SDK before resolving identity. It remains a
-        // locked no-op until the Android public SDK key is supplied at build time.
+        // locked no-op until this platform's public SDK key is supplied at build time.
         await configureRevenueCat();
 
-        // Rehydrate Supabase session
-        const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
           setUserId(session.user.id);
           setDebugPremiumOverride(readDebugPremiumOverride(session.user.id));

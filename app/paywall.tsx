@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  Platform,
   Pressable,
   ScrollView,
   View,
@@ -121,7 +122,7 @@ export default function PaywallScreen() {
         restored ? 'Premium restored' : 'No active subscription found',
         restored
           ? 'Your Premium access has been restored.'
-          : 'There is no active Premium subscription for this Google Play account.'
+          : 'There is no active Premium subscription for this store account.'
       );
     } catch (error) {
       console.warn('[revenuecat] restore failed:', error);
@@ -248,7 +249,7 @@ export default function PaywallScreen() {
         <View className="mt-6 items-center gap-y-2">
           {hasLegalLinks ? (
             <Text className="text-ink-300 text-xs text-center leading-relaxed">
-              Payment will be charged to your Google Play account. Your subscription renews automatically unless cancelled before the renewal date.{' '}
+              Payment will be charged to your {Platform.OS === 'ios' ? 'Apple ID' : 'Google Play account'}. Your subscription renews automatically unless cancelled before the renewal date.{' '}
               <Text className="text-sage-600" onPress={() => openLegalUrl(termsOfUseUrl)}>Terms of Use</Text>
               {' · '}
               <Text className="text-sage-600" onPress={() => openLegalUrl(privacyPolicyUrl)}>Privacy Policy</Text>

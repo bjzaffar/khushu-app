@@ -3,8 +3,10 @@ import { View, ActivityIndicator, Pressable } from 'react-native';
 import { Text } from '@/components/ui/Typography';
 import { router } from 'expo-router';
 import * as Linking from 'expo-linking';
+import * as SecureStore from 'expo-secure-store';
 import { supabase } from '@/lib/supabase/client';
 import { consumePendingUrl } from '@/lib/deeplink';
+import { useAppStore } from '@/store/appStore';
 
 function parseParams(str: string): Record<string, string> {
   const params: Record<string, string> = {};
@@ -127,6 +129,10 @@ export default function AuthCallbackScreen() {
         if (result.action === 'recovery') {
           router.replace('/settings/change-password');
         } else {
+          // OAuth and magic-link sign-ins finish outside the onboarding account
+          // screen, so persist their completion state here before entering tabs.
+          await SecureStore.setItemAsync('onboarding_complete', 'true');
+          useAppStore.getState().setHasCompletedOnboarding(true);
           router.replace('/(tabs)');
         }
         setStatus('Navigation sent.');

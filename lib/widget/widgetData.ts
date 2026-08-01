@@ -140,7 +140,7 @@ export async function writeWidgetData(isPremium: boolean): Promise<void> {
     try {
       const { WidgetDataModule } = NativeModules;
       if (WidgetDataModule?.writeHeatmapData) {
-        WidgetDataModule.writeHeatmapData(json, isPremium);
+        await WidgetDataModule.writeHeatmapData(json, isPremium);
       }
     } catch {
       // Native module not available (Expo Go) — widget won't update
@@ -149,7 +149,7 @@ export async function writeWidgetData(isPremium: boolean): Promise<void> {
     try {
       const { WidgetBridge } = NativeModules;
       if (WidgetBridge?.writeToAppGroup) {
-        WidgetBridge.writeToAppGroup(WIDGET_DATA_KEY, json);
+        await WidgetBridge.writeToAppGroup(WIDGET_DATA_KEY, json);
       }
     } catch {
       // Native module not available

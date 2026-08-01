@@ -1,7 +1,7 @@
-import { View, Switch, Pressable, ScrollView, ActivityIndicator, Platform, Modal } from 'react-native';
+import { Alert, View, Switch, Pressable, ScrollView, ActivityIndicator, Platform, Modal } from 'react-native';
 import { Text } from '@/components/ui/Typography';
 import { ArrowRightIcon } from 'react-native-heroicons/outline';
-import { CheckCircleIcon as CheckCircleSolidIcon } from 'react-native-heroicons/solid';
+import { CheckIcon } from 'react-native-heroicons/solid';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useCallback, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
@@ -81,6 +81,7 @@ export default function SettingsScreen() {
   const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
   const [showFinalDeleteAccountModal, setShowFinalDeleteAccountModal] = useState(false);
   const [showClearLogsModal, setShowClearLogsModal] = useState(false);
+  const [signedInEmail, setSignedInEmail] = useState<string | null>(null);
 
   // Debug entry: 5 taps on version text within 3 seconds
   const debugTapCount = useRef(0);
@@ -102,6 +103,13 @@ export default function SettingsScreen() {
   // Rehydrate from DB each time tab is focused
   useFocusEffect(
     useCallback(() => {
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
+
+      let isActive = true;
+      void supabase.auth.getUser().then(({ data: { user } }) => {
+        if (isActive) setSignedInEmail(user?.email ?? null);
+      });
+
       const mRow = db.select().from(settings).where(eq(settings.key, 'reminder_minutes_before')).get();
       if (mRow) setReminderMinutesBefore(parseInt(mRow.value, 10));
 
@@ -116,6 +124,8 @@ export default function SettingsScreen() {
 
       const dRow = db.select().from(settings).where(eq(settings.key, 'dnd_during_salah')).get();
       if (dRow) setDndDuringSalah(dRow.value === 'true');
+
+      return () => { isActive = false; };
     }, [])
   );
 
@@ -228,11 +238,13 @@ export default function SettingsScreen() {
     setShowFinalDeleteAccountModal(false);
     setShowDeleteAccountModal(false);
     try {
+      const { error: deleteError } = await supabase.rpc('delete_user');
+      if (deleteError) throw deleteError;
       await clearRevenueCatUser();
-      await supabase.rpc('delete_user');
       await supabase.auth.signOut();
-    } catch {
-      // silent — user will see auth state change
+    } catch (error) {
+      console.error('[auth] account deletion failed:', error);
+      Alert.alert('Could not delete account', 'Your account has not been deleted. Please check your connection and try again.');
     }
   }
 
@@ -312,7 +324,12 @@ export default function SettingsScreen() {
             Notifications
           </Text>
           <View className="bg-white rounded-2xl border border-sand-200 overflow-hidden">
-            <View className="px-5 py-4 flex-row justify-between items-center border-b border-sand-100">
+            <Pressable
+              onPress={() => void handlePostSalahToggle(!postSalahPromptEnabled)}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: postSalahPromptEnabled }}
+              className="px-5 py-4 flex-row justify-between items-center border-b border-sand-100 active:bg-sand-100"
+            >
               <View className="flex-1 pr-4">
                 <Text className="text-ink-700 font-medium text-sm">Post-Salah prompt</Text>
                 <Text className="text-ink-300 text-xs mt-0.5">
@@ -321,13 +338,18 @@ export default function SettingsScreen() {
               </View>
               <Switch
                 value={postSalahPromptEnabled}
-                onValueChange={handlePostSalahToggle}
+                onValueChange={(value) => void handlePostSalahToggle(value)}
                 trackColor={{ false: '#EFE8D8', true: '#5A7A5A' }}
                 thumbColor="#FFFFFF"
               />
-            </View>
+            </Pressable>
             {Platform.OS !== 'ios' && (
-              <View className="px-5 py-4 flex-row justify-between items-center">
+              <Pressable
+                onPress={() => handleDndToggle(!dndDuringSalah)}
+                accessibilityRole="switch"
+                accessibilityState={{ checked: dndDuringSalah }}
+                className="px-5 py-4 flex-row justify-between items-center active:bg-sand-100"
+              >
                 <View className="flex-1 pr-4">
                   <Text className="text-ink-700 font-medium text-sm">Silence during Salah Mode</Text>
                   <Text className="text-ink-300 text-xs mt-0.5">
@@ -340,7 +362,7 @@ export default function SettingsScreen() {
                   trackColor={{ false: '#EFE8D8', true: '#5A7A5A' }}
                   thumbColor="#FFFFFF"
                 />
-              </View>
+              </Pressable>
             )}
           </View>
         </View>
@@ -425,9 +447,7 @@ export default function SettingsScreen() {
                         <Text className="text-ink-300 text-xs mt-0.5">{m.region}</Text>
                       </View>
                       {selected && (
-                        <View className="w-5 h-5 rounded-full bg-sage-600 items-center justify-center">
-                          <CheckCircleSolidIcon size={14} color="#FFFFFF" />
-                        </View>
+                        <CheckIcon size={20} color="#5A7A5A" />
                       )}
                     </Pressable>
                   );
@@ -480,6 +500,16 @@ export default function SettingsScreen() {
             Account
           </Text>
           <View className="bg-white rounded-2xl border border-sand-200 overflow-hidden">
+            {userId && signedInEmail && (
+              <View className="px-5 py-4 border-b border-sand-100">
+                <Text className="text-xs font-medium text-ink-300 uppercase tracking-widest mb-1">
+                  Signed in as
+                </Text>
+                <Text className="text-ink-700 font-medium text-sm" numberOfLines={1}>
+                  {signedInEmail}
+                </Text>
+              </View>
+            )}
             {!userId ? (
               <>
               <Pressable

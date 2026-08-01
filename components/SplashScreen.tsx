@@ -37,7 +37,7 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
   return (
     <View style={{ flex: 1, backgroundColor: '#F9F5EE', justifyContent: 'center', alignItems: 'center' }}>
       <Image
-        source={require('../assets/images/khushu-ai-icon.jpeg')}
+        source={require('../assets/images/khushu-logo.png')}
         style={{ width: 200, height: 200, borderRadius: 40 }}
         resizeMode="contain"
       />
