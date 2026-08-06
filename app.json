@@ -22,7 +22,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/khushu-app-icon.png",
-        "backgroundColor": "#F9F5EE"
+        "backgroundColor": "#6B8F6B"
       },
       "package": "com.khushuai.app",
       "permissions": [
@@ -52,7 +52,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/images/khushu-logo.png",
+          "icon": "./assets/images/notification-icon-v2.png",
           "color": "#6B8F6B",
           "sounds": []
         }

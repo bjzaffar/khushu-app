@@ -83,22 +83,8 @@ export default function SettingsScreen() {
   const [showClearLogsModal, setShowClearLogsModal] = useState(false);
   const [signedInEmail, setSignedInEmail] = useState<string | null>(null);
 
-  // Debug entry: 5 taps on version text within 3 seconds
-  const debugTapCount = useRef(0);
-  const debugTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTop(scrollRef);
-
-  function handleDebugTap() {
-    debugTapCount.current += 1;
-    if (debugTapTimer.current) clearTimeout(debugTapTimer.current);
-    debugTapTimer.current = setTimeout(() => { debugTapCount.current = 0; }, 3000);
-    if (debugTapCount.current >= 5) {
-      debugTapCount.current = 0;
-      router.push('/debug');
-    }
-  }
 
   // Rehydrate from DB each time tab is focused
   useFocusEffect(
@@ -626,9 +612,9 @@ export default function SettingsScreen() {
         </View>
 
         {/* ── Version (hidden debug entry) ────────────────────────────────── */}
-        <Pressable onPress={handleDebugTap} className="items-center py-4">
+        <View className="items-center py-4">
           <Text className="text-ink-300 text-xs">Khushu App v1.0.0</Text>
-        </Pressable>
+        </View>
 
       </ScrollView>
 

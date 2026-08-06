@@ -38,6 +38,7 @@ import { archiveActiveCustomDistractions } from '@/lib/customDistractions';
 const BUILTIN_DISTRACTION_KEYS = Object.keys(DISTRACTION_LABELS).filter(
   (k) => k !== 'other'
 ) as DistractionKey[];
+const CUSTOM_DISTRACTION_MAX_LENGTH = 25;
 
 const RATING_LABELS: Record<number, string> = {
   1: 'Heavily distracted',
@@ -274,7 +275,7 @@ export default function LogScreen() {
   }
 
   function handleAddCustomDistraction() {
-    const label = otherInputText.trim().slice(0, 100);
+    const label = otherInputText.trim().slice(0, CUSTOM_DISTRACTION_MAX_LENGTH);
     if (!label) return;
     const key = `custom_${Date.now()}`;
     const newList = [...customDistractions, { key, label }];
@@ -760,14 +761,17 @@ export default function LogScreen() {
                 <Text className="text-ink-500 text-xs mb-2">Name this distraction:</Text>
                 <TextInput
                   value={otherInputText}
-                  onChangeText={(t) => setOtherInputText(t.slice(0, 100))}
-                  maxLength={100}
+                  onChangeText={(t) => setOtherInputText(t.slice(0, CUSTOM_DISTRACTION_MAX_LENGTH))}
+                  maxLength={CUSTOM_DISTRACTION_MAX_LENGTH}
                   placeholder="e.g. Hunger, Noise…"
                   placeholderTextColor="#9B9189"
                   autoFocus
                   className="text-ink-700 text-sm"
                   onSubmitEditing={handleAddCustomDistraction}
                 />
+                <Text className="text-ink-300 text-xs mt-1 text-right">
+                  {otherInputText.length}/{CUSTOM_DISTRACTION_MAX_LENGTH}
+                </Text>
                 <View className="flex-row gap-x-2 mt-3">
                   <Pressable
                     onPress={() => {

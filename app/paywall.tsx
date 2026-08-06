@@ -9,7 +9,12 @@ import {
   View,
 } from 'react-native';
 import { Text } from '@/components/ui/Typography';
-import { CloudIcon, PresentationChartLineIcon } from 'react-native-heroicons/outline';
+import {
+  DevicePhoneMobileIcon,
+  LightBulbIcon,
+  PlusCircleIcon,
+  PresentationChartLineIcon,
+} from 'react-native-heroicons/outline';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { selectIsPremium, useAppStore } from '@/store/appStore';
@@ -158,15 +163,16 @@ export default function PaywallScreen() {
 
         <View className="bg-white rounded-2xl border border-sand-200 overflow-hidden mb-8">
           {[
-            { emoji: '🤲', title: 'AI-generated reminders', description: 'Personalised pre-Salah reminders based on your focus patterns.' },
-            { Icon: PresentationChartLineIcon, title: 'Detailed trend charts', description: 'Explore your khushu by prayer and over time.' },
-            { Icon: CloudIcon, title: 'Cloud sync', description: 'Keep your reflections available across your devices.' },
-          ].map(({ emoji, Icon, title, description }, index, items) => (
+            { Icon: PlusCircleIcon, title: 'Custom distractions', description: "Add more distractions which the default distractions don't cover." },
+            { Icon: LightBulbIcon, title: 'AI-generated reminders', description: 'Personalised reminders for custom distractions—based only on verified messages.' },
+            { Icon: PresentationChartLineIcon, title: 'Detailed insights', description: 'Explore larger chart date ranges and see top distraction by salah.' },
+            { Icon: DevicePhoneMobileIcon, title: 'Heatmap widget', description: 'See your weekly focus on your homescreen.' },
+          ].map(({ Icon, title, description }, index, items) => (
             <View
               key={title}
               className={`px-5 py-4 flex-row gap-x-4 items-start${index < items.length - 1 ? ' border-b border-sand-100' : ''}`}
             >
-              {Icon ? <Icon size={20} color="#3D3A37" style={{ marginTop: 2 }} /> : <Text className="text-xl mt-0.5">{emoji}</Text>}
+              <Icon size={20} color="#5a7a5a" style={{ marginTop: 2 }} />
               <View className="flex-1">
                 <Text className="text-ink-700 font-medium text-sm">{title}</Text>
                 <Text className="text-ink-300 text-xs leading-relaxed mt-1">{description}</Text>

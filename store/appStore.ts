@@ -50,8 +50,6 @@ interface AppState {
   setUserId: (id: string | null) => void;
   premiumStatus: PremiumStatus;
   setPremiumStatus: (status: PremiumStatus) => void;
-  debugPremiumOverride: boolean;
-  setDebugPremiumOverride: (enabled: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -100,10 +98,8 @@ export const useAppStore = create<AppState>((set) => ({
   setUserId: (id) => set({ userId: id }),
   premiumStatus: 'unknown',
   setPremiumStatus: (premiumStatus) => set({ premiumStatus }),
-  debugPremiumOverride: false,
-  setDebugPremiumOverride: (debugPremiumOverride) => set({ debugPremiumOverride }),
 }));
 
-/** RevenueCat grants access unless the debug screen's local override is enabled. */
-export const selectIsPremium = (state: Pick<AppState, 'premiumStatus' | 'debugPremiumOverride'>): boolean =>
-  state.premiumStatus === 'premium' || state.debugPremiumOverride;
+/** Premium access is granted only by an active RevenueCat entitlement. */
+export const selectIsPremium = (state: Pick<AppState, 'premiumStatus'>): boolean =>
+  state.premiumStatus === 'premium';

@@ -24,7 +24,7 @@
         { "text": "Work has occasionally pulled at your attention during this prayer.", "type": "short" }
       ],
       "llm_guidance": {
-        "theme": "entrusting affairs and releasing the need to control outcomes",
+        "theme": "entrusting affairs to Allah and releasing the need to control outcomes",
         "avoid": "productivity advice, toxic positivity, minimising the stress",
         "tone": "grounding, surrendering, confident trust in Allah's management"
       }

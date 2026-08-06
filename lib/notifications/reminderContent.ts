@@ -69,7 +69,7 @@ function getCustomDistractionLabel(customKey: string): string | null {
 function getCustomFallbackReminder(customKey: string): GeneratedReminder {
   const label = getCustomDistractionLabel(customKey) ?? 'this distraction';
   return {
-    text: `You've been struggling with ${label}. Refocus on Allah before you begin.`,
+    text: `You've been struggling with "${label}". Take a deep breath and refocus on Allah before you begin.`,
     type: 'short',
   };
 }
@@ -135,20 +135,6 @@ export async function generateAIReminder(
       return null;
     }
 
-    const allDistractions = templates.distractions as Record<
-      string,
-      { llm_guidance: { theme: string; avoid: string; tone: string }; established: TemplateEntry[] }
-    >;
-
-    // Unknown custom distractions use the random category rather than every template.
-    const foundationCategory = closestCategory ?? 'random';
-    const guidance = allDistractions[foundationCategory]?.llm_guidance;
-    if (!guidance) return null;
-
-    const established = allDistractions[foundationCategory]?.established ?? [];
-    if (established.length === 0) return null;
-    const foundationReminders = [pick(established)];
-
     const res = await fetch(
       `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/generate-reminder`,
       {
@@ -160,10 +146,8 @@ export async function generateAIReminder(
         },
         body: JSON.stringify({
           text,
-          closestCategory: foundationCategory,
+          closestCategory: closestCategory ?? 'random',
           prayerName,
-          llmGuidance: guidance,
-          foundationReminders,
         }),
       }
     );

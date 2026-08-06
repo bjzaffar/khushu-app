@@ -38,7 +38,6 @@ import { writeWidgetData } from '@/lib/widget/widgetData';
 import { setPendingUrl } from '@/lib/deeplink';
 import * as Linking from 'expo-linking';
 import { archiveActiveCustomDistractions } from '@/lib/customDistractions';
-import { readDebugPremiumOverride } from '@/lib/debug/premiumOverride';
 import {
   clearRevenueCatUser,
   configureRevenueCat,
@@ -76,7 +75,6 @@ export default function RootLayout() {
     startSalahMode,
     setUserId,
     setPremiumStatus,
-    setDebugPremiumOverride,
     premiumStatus,
     isDbReady,
   } = useAppStore();
@@ -112,7 +110,6 @@ export default function RootLayout() {
 
         if (session?.user) {
           setUserId(session.user.id);
-          setDebugPremiumOverride(readDebugPremiumOverride(session.user.id));
           setPremiumStatus('unknown');
           try {
             await identifyRevenueCatUser(session.user.id);
@@ -127,7 +124,6 @@ export default function RootLayout() {
           );
         } else {
           setUserId(null);
-          setDebugPremiumOverride(readDebugPremiumOverride(null));
           await clearRevenueCatUser();
         }
 
@@ -198,7 +194,6 @@ export default function RootLayout() {
 
       if (!session?.user || event === 'SIGNED_OUT') {
         setUserId(null);
-        setDebugPremiumOverride(readDebugPremiumOverride(null));
         setPremiumStatus('free');
         setTimeout(() => {
           clearRevenueCatUser();
@@ -210,7 +205,6 @@ export default function RootLayout() {
       // from an async callback can deadlock setSession(), including recovery links.
       const uid = session.user.id;
       setUserId(uid);
-      setDebugPremiumOverride(readDebugPremiumOverride(uid));
       setPremiumStatus('unknown');
       setTimeout(() => {
         (async () => {
@@ -351,7 +345,6 @@ export default function RootLayout() {
         <Stack.Screen name="settings/change-password" />
         <Stack.Screen name="salah-mode" options={{ presentation: 'fullScreenModal' }} />
         <Stack.Screen name="paywall" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="debug" options={{ presentation: 'modal' }} />
         <Stack.Screen name="+not-found" />
       </Stack>
     </GestureHandlerRootView>

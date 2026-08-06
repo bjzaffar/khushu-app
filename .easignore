@@ -1,0 +1,28 @@
+# Dependency and Expo caches
+node_modules/
+.expo/
+dist/
+web-build/
+
+# Generated native build outputs and caches
+android/.gradle/
+android/build/
+android/app/build/
+ios/build/
+
+# Local credentials and environment values
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+.env
+.env.local
+.env.production
+
+# Editor, VCS, and temporary files
+.git/
+.idea/
+*.orig.*
+*.log
+tmp/
