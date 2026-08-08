@@ -146,10 +146,21 @@ export default function PaywallScreen() {
     }
   }
 
+  function closePaywall() {
+    // A widget opens this screen through a deep link, which may leave the
+    // paywall as the only route in the navigation stack. In that case there
+    // is nothing for `back()` to dismiss to, so explicitly return home.
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)');
+    }
+  }
+
   return (
     <SafeAreaView className="flex-1 bg-sand-100">
       <ScrollView className="flex-1 px-6 pt-6" contentContainerStyle={{ paddingBottom: 40 }}>
-        <Pressable onPress={() => router.back()} className="self-end mb-4 p-2 active:opacity-60">
+        <Pressable onPress={closePaywall} className="self-end mb-4 p-2 active:opacity-60">
           <Text className="text-ink-300 text-sm">Close</Text>
         </Pressable>
 

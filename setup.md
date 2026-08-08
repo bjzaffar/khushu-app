@@ -1,4 +1,4 @@
-# Khushu Store and RevenueCat Setup
+-# Khushu Store and RevenueCat Setup
 
 Use one legal entity consistently across Apple, Google Play, bank, and tax details. If operating personally as a sole trader, use personal details. If the Ltd company will own the app and receive revenue, use the company details and organisation accounts.
 
