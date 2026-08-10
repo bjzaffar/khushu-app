@@ -1,11 +1,20 @@
-import { Alert, View, Switch, Pressable, ScrollView, ActivityIndicator, Platform, Modal } from 'react-native';
+import { Alert, View, Switch, Pressable, ScrollView, ActivityIndicator, Platform, Modal, type LayoutChangeEvent } from 'react-native';
 import { Text } from '@/components/ui/Typography';
 import { ArrowRightIcon } from 'react-native-heroicons/outline';
 import { CheckIcon } from 'react-native-heroicons/solid';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { useScrollToTop } from '@react-navigation/native';
+import Animated, {
+  cancelAnimation,
+  Easing,
+  useAnimatedProps,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated';
+import Svg, { G, Rect } from 'react-native-svg';
 import { eq } from 'drizzle-orm';
 import { salahLogs } from '@/db/schema';
 import * as Location from 'expo-location';
@@ -28,6 +37,111 @@ import { WheelPicker } from '@/components/ui/WheelPicker';
 import { clearRevenueCatUser, openRevenueCatCustomerCenter } from '@/lib/revenuecat/service';
 
 const MINUTE_VALUES = Array.from({ length: 60 }, (_, i) => i + 1); // 1–60
+const AnimatedGroup = Animated.createAnimatedComponent(G);
+const STAR_GLOW_LAYERS = [
+  { strokeWidth: 7, strokeOpacity: 0.06 },
+  { strokeWidth: 4.5, strokeOpacity: 0.1 },
+  { strokeWidth: 2.6, strokeOpacity: 0.18 },
+  { strokeWidth: 1.2, strokeOpacity: 0.82 },
+] as const;
+
+function StarBorderUpgradeRow() {
+  const progress = useSharedValue(0);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    progress.value = withRepeat(
+      withTiming(1, {
+        duration: 4500,
+        easing: Easing.linear,
+      }),
+      -1,
+      false
+    );
+    return () => cancelAnimation(progress);
+  }, [progress]);
+
+  const onLayout = (event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    setSize((current) => current.width === width && current.height === height ? current : { width, height });
+  };
+
+  const { width, height } = size;
+  const borderInset = 3;
+  const borderWidth = Math.max(width - borderInset * 2, 1);
+  const borderHeight = Math.max(height - borderInset * 2, 1);
+  const borderRadius = Math.min(13, borderWidth / 2, borderHeight / 2);
+  const perimeter = 2 * (borderWidth + borderHeight - 4 * borderRadius) + 2 * Math.PI * borderRadius;
+  const glowLength = Math.min(34, perimeter * 0.1);
+  const glowPattern = [glowLength, Math.max(perimeter - glowLength, 1)];
+  const firstAnimatedProps = useAnimatedProps(() => ({
+    strokeDashoffset: -progress.value * perimeter,
+  }), [perimeter]);
+  const secondAnimatedProps = useAnimatedProps(() => ({
+    strokeDashoffset: -perimeter / 2 - progress.value * perimeter,
+  }), [perimeter]);
+
+  return (
+    <View onLayout={onLayout} className="relative overflow-hidden">
+      <Pressable
+        onPress={() => router.push('/paywall')}
+        className="px-5 py-4 flex-row justify-between items-center border-b border-sand-100 active:bg-sand-100"
+      >
+        <View className="flex-1 pr-3">
+          <Text className="text-ink-700 font-medium text-sm">UPGRADE TO PREMIUM</Text>
+        </View>
+        <View className="flex-row items-center gap-x-1">
+          <Text className="text-sage-600 text-sm font-medium">Upgrade</Text>
+          <ArrowRightIcon size={16} color="#5A7A5A" />
+        </View>
+      </Pressable>
+      {width > 0 && height > 0 && (
+        <View pointerEvents="none" className="absolute inset-0">
+          <Svg width={width} height={height}>
+            <AnimatedGroup animatedProps={firstAnimatedProps}>
+              {STAR_GLOW_LAYERS.map((layer) => (
+                <Rect
+                  key={layer.strokeWidth}
+                  x={borderInset}
+                  y={borderInset}
+                  width={borderWidth}
+                  height={borderHeight}
+                  rx={borderRadius}
+                  fill="none"
+                  stroke="#5A7A5A"
+                  strokeWidth={layer.strokeWidth}
+                  strokeOpacity={layer.strokeOpacity}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeDasharray={glowPattern}
+                />
+              ))}
+            </AnimatedGroup>
+            <AnimatedGroup animatedProps={secondAnimatedProps}>
+              {STAR_GLOW_LAYERS.map((layer) => (
+                <Rect
+                  key={layer.strokeWidth}
+                  x={borderInset}
+                  y={borderInset}
+                  width={borderWidth}
+                  height={borderHeight}
+                  rx={borderRadius}
+                  fill="none"
+                  stroke="#5A7A5A"
+                  strokeWidth={layer.strokeWidth}
+                  strokeOpacity={layer.strokeOpacity}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeDasharray={glowPattern}
+                />
+              ))}
+            </AnimatedGroup>
+          </Svg>
+        </View>
+      )}
+    </View>
+  );
+}
 
 // Country ISO → recommended calculation method
 const COUNTRY_TO_METHOD: Partial<Record<string, CalculationMethodKey>> = {
@@ -569,18 +683,7 @@ export default function SettingsScreen() {
               </>
             ) : (
               <>
-                <Pressable
-                  onPress={() => router.push('/paywall')}
-                  className="px-5 py-4 flex-row justify-between items-center border-b border-sand-100 active:bg-sand-100"
-                >
-                  <View className="flex-1 pr-3">
-                    <Text className="text-ink-700 font-medium text-sm">Upgrade to Premium</Text>
-                    <Text className="text-ink-300 text-xs mt-0.5">
-                      AI reminders personalised to your focus patterns.
-                    </Text>
-                  </View>
-                  <View className="flex-row items-center gap-x-1"><Text className="text-sage-600 text-sm font-medium">Upgrade</Text><ArrowRightIcon size={16} color="#5A7A5A" /></View>
-                </Pressable>
+                <StarBorderUpgradeRow />
                 <Pressable
                   onPress={() => router.push('/settings/change-password')}
                   className="px-5 py-4 flex-row justify-between items-center border-b border-sand-100 active:bg-sand-100"
@@ -613,7 +716,7 @@ export default function SettingsScreen() {
 
         {/* ── Version (hidden debug entry) ────────────────────────────────── */}
         <View className="items-center py-4">
-          <Text className="text-ink-300 text-xs">Khushu App v1.0.0</Text>
+          <Text className="text-ink-300 text-xs">Khushu App v1.1.0</Text>
         </View>
 
       </ScrollView>

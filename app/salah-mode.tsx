@@ -3,7 +3,7 @@ import { Text } from '@/components/ui/Typography';
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { useKeepAwake } from 'expo-keep-awake';
-import { selectIsPremium, useAppStore } from '@/store/appStore';
+import { useAppStore } from '@/store/appStore';
 import { SALAH_DISPLAY_NAMES } from '@/types';
 import { getPatternForSalah } from '@/lib/patterns/patternEngine';
 import { getReminderContent } from '@/lib/notifications/reminderContent';
@@ -14,7 +14,6 @@ export default function SalahModeScreen() {
   useKeepAwake();
 
   const { activeSalah, endSalahMode, dndDuringSalah } = useAppStore();
-  const isPremium = useAppStore(selectIsPremium);
   const salahDisplayName = activeSalah ? SALAH_DISPLAY_NAMES[activeSalah] : 'Salah';
   const previousRingerMode = useRef<0 | 1 | 2 | null>(null);
 
@@ -26,7 +25,7 @@ export default function SalahModeScreen() {
     if (!activeSalah) { setStep('active'); return; }
     (async () => {
       try {
-        const pattern = await getPatternForSalah(activeSalah, isPremium ? undefined : 7);
+        const pattern = await getPatternForSalah(activeSalah);
         const { text } = getReminderContent(pattern);
         setReminderText(text);
         setStep('reminder');

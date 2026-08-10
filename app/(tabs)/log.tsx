@@ -9,7 +9,7 @@ import {
   Easing,
 } from 'react-native';
 import { Text, TextInput } from '@/components/ui/Typography';
-import { ArrowUturnUpIcon, LockClosedIcon, StarIcon, XMarkIcon } from 'react-native-heroicons/outline';
+import { ArrowUturnUpIcon, StarIcon, XMarkIcon } from 'react-native-heroicons/outline';
 import { CheckCircleIcon as CheckCircleSolidIcon, StarIcon as StarSolidIcon } from 'react-native-heroicons/solid';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -32,7 +32,6 @@ import { getCurrentSalahWindow } from '@/lib/prayer/prayerTimes';
 import { cancelPostSalahForSalah, cancelReEngagementNotification } from '@/lib/notifications/notificationService';
 import { classifyDistraction, generateAIReminder } from '@/lib/notifications/reminderContent';
 import { writeWidgetData } from '@/lib/widget/widgetData';
-import { archiveActiveCustomDistractions } from '@/lib/customDistractions';
 
 // Built-in keys excluding 'other' (rendered separately)
 const BUILTIN_DISTRACTION_KEYS = Object.keys(DISTRACTION_LABELS).filter(
@@ -153,16 +152,6 @@ export default function LogScreen() {
       try { setHiddenBuiltins(JSON.parse(hiddenRow.value)); } catch {}
     }
   }, []);
-
-  // The root layout archives on downgrade. Mirror that change into this
-  // mounted tab immediately so free users cannot keep selecting old customs.
-  useEffect(() => {
-    if (isPremium) return;
-    archiveActiveCustomDistractions();
-    setCustomDistractions([]);
-    setSelectedDistractions((current) => current.filter((key) => !key.startsWith('custom_')));
-    setEditMode(false);
-  }, [isPremium]);
 
   const loadLogsForDay = useCallback((day: LogDay) => {
     const logs = db
@@ -632,22 +621,16 @@ export default function LogScreen() {
               <Text className="text-xs font-medium text-ink-300 uppercase tracking-widest">
                 What distracted you?
               </Text>
-              {isPremium ? (
-                <Pressable
-                  onPress={() => {
-                    setEditMode((v) => !v);
-                    setShowOtherInput(false);
-                  }}
-                >
-                  <Text className="text-sage-600 text-xs font-medium">
-                    {editMode ? 'Done' : 'Edit'}
-                  </Text>
-                </Pressable>
-              ) : (
-                <Pressable onPress={() => router.push('/paywall')}>
-                  <View className="flex-row items-center gap-x-1"><Text className="text-ink-300 text-xs font-medium">Edit</Text><LockClosedIcon size={12} color="#9B9189" /></View>
-                </Pressable>
-              )}
+              <Pressable
+                onPress={() => {
+                  setEditMode((v) => !v);
+                  setShowOtherInput(false);
+                }}
+              >
+                <Text className="text-sage-600 text-xs font-medium">
+                  {editMode ? 'Done' : 'Edit'}
+                </Text>
+              </Pressable>
             </View>
 
             <View className="flex-row flex-wrap gap-2">
@@ -784,7 +767,7 @@ export default function LogScreen() {
                     <Text className="text-ink-500 text-sm">Cancel</Text>
                   </Pressable>
                   <Pressable
-                    onPress={isPremium ? handleAddCustomDistraction : () => router.push('/paywall')}
+                    onPress={handleAddCustomDistraction}
                     disabled={!otherInputText.trim()}
                     className={`flex-1 py-2 rounded-xl items-center ${
                       otherInputText.trim() ? 'bg-sage-600' : 'bg-sand-200'

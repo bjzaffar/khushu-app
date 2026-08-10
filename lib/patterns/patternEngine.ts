@@ -1,12 +1,7 @@
 import { db } from '@/db/database';
 import { salahLogs } from '@/db/schema';
-import { count, eq, and, gte } from 'drizzle-orm';
+import { count, eq } from 'drizzle-orm';
 import type { SalahName, PatternResult } from '@/types';
-
-function daysAgoDateStr(days: number): string {
-  const d = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-  return d.toISOString().split('T')[0];
-}
 
 /**
  * Analyse logged data for a given Salah and return which reminder phase
@@ -16,25 +11,18 @@ function daysAgoDateStr(days: number): string {
  *   Cold Start  — < 3 logs for this Salah
  *   Established — ≥ 3 logs with a detectable most-frequent distraction
  *
- * dayLimit — if set, only logs from the last N days are considered (free tier = 7).
- *            Pass undefined for no limit (premium).
+ * Patterns always use the user's complete Salah log history. Entitlement-based
+ * display limits belong at the presentation layer and must not affect analysis.
  */
-export async function getPatternForSalah(salahName: SalahName, dayLimit?: number): Promise<PatternResult> {
-  const dateFilter = dayLimit ? daysAgoDateStr(dayLimit) : null;
-
+export async function getPatternForSalah(salahName: SalahName): Promise<PatternResult> {
   const specificLogs = await db
     .select()
     .from(salahLogs)
-    .where(
-      dateFilter
-        ? and(eq(salahLogs.salahName, salahName), gte(salahLogs.logDate, dateFilter))
-        : eq(salahLogs.salahName, salahName)
-    );
+    .where(eq(salahLogs.salahName, salahName));
 
   const [{ total }] = await db
     .select({ total: count() })
-    .from(salahLogs)
-    .where(dateFilter ? gte(salahLogs.logDate, dateFilter) : undefined);
+    .from(salahLogs);
 
   const totalLogs = Number(total);
   const logCount = specificLogs.length;

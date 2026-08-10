@@ -175,7 +175,8 @@ export async function generateAIReminder(
  * cold_start  → random short grounding reminder
  * emerging    → soft observational text for the top distraction
  * established → distraction → Divine Attribute reminder (random from pool)
- * custom key  → cached AI reminder (or a concrete local fallback)
+ * custom key  → cached Premium AI reminder, or the same label-aware local
+ *               fallback used for free users and when AI is unavailable
  */
 export function getReminderContent(pattern: PatternResult): { text: string; type: ReminderType } {
   const coldPool = templates.cold_start as TemplateEntry[];
@@ -186,7 +187,8 @@ export function getReminderContent(pattern: PatternResult): { text: string; type
 
   const topKey = pattern.topDistraction;
 
-  // Custom key → use cached AI reminder
+  // Free users never generate AI reminders. They, and Premium users whose
+  // reminder is not cached yet, receive this same local fallback.
   if (topKey.startsWith('custom_')) {
     const cached = getCachedReminder(topKey);
     if (cached) return cached;

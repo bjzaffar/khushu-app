@@ -583,10 +583,8 @@ export default function InsightsScreen() {
       .split('T')[0];
     // Always use 7-day window for averages
     const avgWindowDaysAgo = sevenDaysAgo;
-    // Free: only count logs in last 7 days; premium: all logs for total count
-    const totalRow = isPremium
-      ? db.select({ n: count() }).from(salahLogs).get()
-      : db.select({ n: count() }).from(salahLogs).where(gte(salahLogs.logDate, sevenDaysAgo)).get();
+    // The empty-state threshold reflects complete history for every tier.
+    const totalRow = db.select({ n: count() }).from(salahLogs).get();
     const totalLogs = totalRow?.n ?? 0;
 
     const weekRow = db
@@ -610,7 +608,8 @@ export default function InsightsScreen() {
       }
     }
 
-    // Free: 7-day window for distractions; premium: all-time
+    // Insight patterns use complete history for every tier. Only the chart's
+    // selectable date range is entitlement-limited.
     const allRows = db
       .select({
         salahName: salahLogs.salahName,
@@ -619,7 +618,6 @@ export default function InsightsScreen() {
         loggedAt: salahLogs.loggedAt,
       })
       .from(salahLogs)
-      .where(isPremium ? undefined : gte(salahLogs.logDate, sevenDaysAgo))
       .orderBy(asc(salahLogs.loggedAt))
       .all();
 
@@ -764,26 +762,24 @@ export default function InsightsScreen() {
           <>
             {/* ── Khushu Over Time ───────────────────────────────────────────── */}
             <View className="mb-6">
-              {/* Header row: title + two dropdowns */}
-              <View className="flex-row items-center justify-between mb-3">
-                <Dropdown
-                  value={salahFilter}
-                  options={SALAH_OPTIONS}
-                  onChange={setSalahFilter}
-                />
-                <Dropdown
-                  value={timeframe}
-                  options={TIMEFRAME_OPTIONS}
-                  onChange={setTimeframe}
-                  lockedValues={isPremium ? undefined : new Set<'7' | '30' | '90' | 'all'>(['30', '90', 'all'])}
-                  onLockedPress={() => router.push('/paywall')}
-                />
-              </View>
-
               <View className="bg-white rounded-2xl border border-sand-200 px-4 pt-4 pb-2">
                 <Text className="text-xs font-medium text-ink-300 uppercase tracking-widest mb-3">
                   Khushu Over Time
                 </Text>
+                <View className="flex-row items-center justify-between mb-4">
+                  <Dropdown
+                    value={salahFilter}
+                    options={SALAH_OPTIONS}
+                    onChange={setSalahFilter}
+                  />
+                  <Dropdown
+                    value={timeframe}
+                    options={TIMEFRAME_OPTIONS}
+                    onChange={setTimeframe}
+                    lockedValues={isPremium ? undefined : new Set<'7' | '30' | '90' | 'all'>(['30', '90', 'all'])}
+                    onLockedPress={() => router.push('/paywall')}
+                  />
+                </View>
                 <KhushuChart points={chartPoints} />
               </View>
             </View>

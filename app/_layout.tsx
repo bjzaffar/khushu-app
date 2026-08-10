@@ -37,7 +37,6 @@ import NetInfo from '@react-native-community/netinfo';
 import { writeWidgetData } from '@/lib/widget/widgetData';
 import { setPendingUrl } from '@/lib/deeplink';
 import * as Linking from 'expo-linking';
-import { archiveActiveCustomDistractions } from '@/lib/customDistractions';
 import {
   clearRevenueCatUser,
   configureRevenueCat,
@@ -80,7 +79,6 @@ export default function RootLayout() {
   } = useAppStore();
   const isPremium = useAppStore(selectIsPremium);
   const [initError, setInitError] = useState<string | null>(null);
-  const wasPremiumRef = useRef(false);
   const authVersionRef = useRef(0);
 
   useEffect(() => {
@@ -264,15 +262,6 @@ export default function RootLayout() {
       }
     });
   }, [isDbReady, isPremium, premiumStatus]);
-
-  // Downgrading removes custom distractions from new logging, but keeps their
-  // labels and every historical log intact for Insights and later reactivation.
-  useEffect(() => {
-    if (wasPremiumRef.current && !isPremium) {
-      archiveActiveCustomDistractions();
-    }
-    wasPremiumRef.current = isPremium;
-  }, [isPremium]);
 
   // Flush offline saves as soon as the device regains an internet connection.
   useEffect(() => {

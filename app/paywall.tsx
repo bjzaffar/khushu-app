@@ -12,7 +12,6 @@ import { Text } from '@/components/ui/Typography';
 import {
   DevicePhoneMobileIcon,
   LightBulbIcon,
-  PlusCircleIcon,
   PresentationChartLineIcon,
 } from 'react-native-heroicons/outline';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -174,7 +173,6 @@ export default function PaywallScreen() {
 
         <View className="bg-white rounded-2xl border border-sand-200 overflow-hidden mb-8">
           {[
-            { Icon: PlusCircleIcon, title: 'Custom distractions', description: "Add more distractions which the default distractions don't cover." },
             { Icon: LightBulbIcon, title: 'AI-generated reminders', description: 'Personalised reminders for custom distractions—based only on verified messages.' },
             { Icon: PresentationChartLineIcon, title: 'Detailed insights', description: 'Explore larger chart date ranges and see top distraction by salah.' },
             { Icon: DevicePhoneMobileIcon, title: 'Heatmap widget', description: 'See your weekly focus on your homescreen.' },
