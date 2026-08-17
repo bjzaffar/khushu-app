@@ -1,4 +1,4 @@
-import { View, Pressable, StatusBar, Platform, NativeModules } from 'react-native';
+import { AppState, View, Pressable, StatusBar, Platform, NativeModules } from 'react-native';
 import { Text } from '@/components/ui/Typography';
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
@@ -9,6 +9,7 @@ import { getPatternForSalah } from '@/lib/patterns/patternEngine';
 import { getReminderContent } from '@/lib/notifications/reminderContent';
 
 type Step = 'loading' | 'reminder' | 'active';
+type SilenceStatus = 'off' | 'applying' | 'silenced' | 'permission-required' | 'failed' | 'unsupported';
 
 export default function SalahModeScreen() {
   useKeepAwake();
@@ -16,9 +17,12 @@ export default function SalahModeScreen() {
   const { activeSalah, endSalahMode, dndDuringSalah } = useAppStore();
   const salahDisplayName = activeSalah ? SALAH_DISPLAY_NAMES[activeSalah] : 'Salah';
   const previousRingerMode = useRef<0 | 1 | 2 | null>(null);
+  const ringerWasChanged = useRef(false);
+  const retrySilencing = useRef<(() => void) | null>(null);
 
   const [step, setStep] = useState<Step>('loading');
   const [reminderText, setReminderText] = useState('');
+  const [silenceStatus, setSilenceStatus] = useState<SilenceStatus>('off');
 
   // Load reminder content on mount
   useEffect(() => {
@@ -35,31 +39,95 @@ export default function SalahModeScreen() {
     })();
   }, []);
 
-  // On Android: silence phone when entering Salah Mode, restore when leaving
+  // On Android: silence phone when entering Salah Mode, restore when leaving.
+  // Android 7+ requires the user to grant Notification Policy (DND) access
+  // before an app can move the ringer across the silent/DND boundary.
   useEffect(() => {
-    if (!dndDuringSalah || Platform.OS !== 'android') return;
-    if (!NativeModules.VolumeManager) return;
+    if (!dndDuringSalah || Platform.OS !== 'android') {
+      setSilenceStatus('off');
+      return;
+    }
+    if (!NativeModules.VolumeManager) {
+      setSilenceStatus('unsupported');
+      return;
+    }
 
-    (async () => {
+    let mounted = true;
+    let operation = Promise.resolve();
+
+    const applySilence = async () => {
       try {
         const { VolumeManager, RINGER_MODE } = await import('react-native-volume-manager');
-        const current = await VolumeManager.getRingerMode();
-        previousRingerMode.current = (current as 0 | 1 | 2) ?? null;
+        const hasDndAccess = await VolumeManager.checkDndAccess();
+        if (!mounted) return;
+        if (!hasDndAccess) {
+          setSilenceStatus('permission-required');
+          return;
+        }
+
+        setSilenceStatus('applying');
+        if (previousRingerMode.current === null) {
+          const current = await VolumeManager.getRingerMode();
+          previousRingerMode.current = (current as 0 | 1 | 2) ?? null;
+        }
+        if (!mounted) return;
+
         await VolumeManager.setRingerMode(RINGER_MODE.silent);
-      } catch {}
-    })();
+        ringerWasChanged.current = true;
+
+        const actual = await VolumeManager.getRingerMode();
+        if (mounted) {
+          setSilenceStatus(actual === RINGER_MODE.silent ? 'silenced' : 'failed');
+        }
+      } catch (error) {
+        console.warn('[salah-mode] Could not silence the Android ringer:', error);
+        if (mounted) setSilenceStatus('failed');
+      }
+    };
+
+    const enqueueSilence = () => {
+      operation = operation.then(applySilence, applySilence);
+    };
+
+    retrySilencing.current = enqueueSilence;
+    enqueueSilence();
+
+    // Re-check after the user returns from Android's DND access screen.
+    const appStateSubscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') enqueueSilence();
+    });
 
     return () => {
-      if (!NativeModules.VolumeManager) return;
-      (async () => {
+      mounted = false;
+      retrySilencing.current = null;
+      appStateSubscription.remove();
+      void (async () => {
         try {
+          await operation;
+          if (!ringerWasChanged.current || previousRingerMode.current === null) return;
+
           const { VolumeManager, RINGER_MODE } = await import('react-native-volume-manager');
-          const restore = previousRingerMode.current ?? RINGER_MODE.normal;
-          await VolumeManager.setRingerMode(restore);
-        } catch {}
+          // Do not override a ringer mode the user manually selected while praying.
+          const current = await VolumeManager.getRingerMode();
+          if (current === RINGER_MODE.silent) {
+            await VolumeManager.setRingerMode(previousRingerMode.current);
+          }
+        } catch (error) {
+          console.warn('[salah-mode] Could not restore the Android ringer:', error);
+        }
       })();
     };
   }, [dndDuringSalah]);
+
+  async function handleDndAccessRequest() {
+    try {
+      const { VolumeManager } = await import('react-native-volume-manager');
+      await VolumeManager.requestDndAccess();
+    } catch (error) {
+      console.warn('[salah-mode] Could not open Android DND access settings:', error);
+      setSilenceStatus('failed');
+    }
+  }
 
   async function handleEndSalah() {
     endSalahMode();
@@ -130,8 +198,31 @@ export default function SalahModeScreen() {
             {salahDisplayName}
           </Text>
         )}
-        {dndDuringSalah && Platform.OS === 'android' && (
+        {dndDuringSalah && Platform.OS === 'android' && silenceStatus === 'silenced' && (
           <Text className="text-ink-500 text-xs text-center">Phone silenced</Text>
+        )}
+        {dndDuringSalah && Platform.OS === 'android' && silenceStatus === 'applying' && (
+          <Text className="text-ink-500 text-xs text-center">Silencing phone...</Text>
+        )}
+        {dndDuringSalah && Platform.OS === 'android' && silenceStatus === 'permission-required' && (
+          <Pressable
+            onPress={() => void handleDndAccessRequest()}
+            accessibilityRole="button"
+            className="border border-ink-500 py-2.5 px-4 rounded-xl active:bg-ink-700"
+          >
+            <Text className="text-ink-300 text-xs text-center">Allow Do Not Disturb access</Text>
+          </Pressable>
+        )}
+        {dndDuringSalah && Platform.OS === 'android' && silenceStatus === 'failed' && (
+          <Pressable
+            onPress={() => retrySilencing.current?.()}
+            accessibilityRole="button"
+          >
+            <Text className="text-ink-300 text-xs text-center">Couldn&apos;t silence phone · Tap to retry</Text>
+          </Pressable>
+        )}
+        {dndDuringSalah && Platform.OS === 'android' && silenceStatus === 'unsupported' && (
+          <Text className="text-ink-500 text-xs text-center">Automatic silencing unavailable</Text>
         )}
         {dndDuringSalah && Platform.OS === 'ios' && (
           <Text className="text-ink-500 text-xs text-center">

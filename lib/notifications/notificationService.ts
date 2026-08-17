@@ -5,12 +5,16 @@ import type { SalahName, PrayerTimes } from '@/types';
 import { getPatternForSalah } from '@/lib/patterns/patternEngine';
 import { getReminderContent } from '@/lib/notifications/reminderContent';
 import { db } from '@/db/database';
-import { settings } from '@/db/schema';
+import { salahLogs, settings } from '@/db/schema';
+import { toLocalDateKey } from '@/lib/date';
+import { eq } from 'drizzle-orm';
 
 // Show notifications when app is in the foreground
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: false,
     shouldSetBadge: false,
   }),
@@ -85,6 +89,18 @@ export async function schedulePostSalahPrompts(
 ): Promise<void> {
   await cancelPostSalahReminders();
   const now = new Date();
+  const today = toLocalDateKey(now);
+
+  const getLoggedToday = () => new Set(
+    db
+      .select({ salahName: salahLogs.salahName })
+      .from(salahLogs)
+      .where(eq(salahLogs.logDate, today))
+      .all()
+      .map((row) => row.salahName as SalahName)
+  );
+
+  const alreadyLogged = getLoggedToday();
 
   const windowClose: [SalahName, Date][] = [
     ['fajr',    prayerTimes.dhuhr],
@@ -95,7 +111,7 @@ export async function schedulePostSalahPrompts(
   ];
 
   for (const [salah, closeTime] of windowClose) {
-    if (closeTime <= now) continue;
+    if (closeTime <= now || alreadyLogged.has(salah)) continue;
 
     await Notifications.scheduleNotificationAsync({
       identifier: `post_salah_${salah}`,
@@ -110,6 +126,12 @@ export async function schedulePostSalahPrompts(
         date: closeTime,
       },
     });
+  }
+
+  // A log can be saved while the asynchronous scheduling loop is running.
+  // Reconcile once more so a late schedule can never recreate that prompt.
+  for (const salah of getLoggedToday()) {
+    await cancelPostSalahForSalah(salah);
   }
 }
 

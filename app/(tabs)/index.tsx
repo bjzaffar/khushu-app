@@ -14,6 +14,7 @@ import {
   type PrayerTimes,
 } from '@/types';
 import { formatPrayerTime, getCurrentSalahWindow } from '@/lib/prayer/prayerTimes';
+import { toLocalDateKey } from '@/lib/date';
 import { db } from '@/db/database';
 import { salahLogs } from '@/db/schema';
 import { eq } from 'drizzle-orm';
@@ -74,10 +75,11 @@ export default function HomeScreen() {
   useEffect(() => {
     if (!notificationsGranted || !todaysPrayerTimes || hasScheduledInitialReminders.current) return;
     hasScheduledInitialReminders.current = true;
+    const prayerTimes = todaysPrayerTimes;
 
     async function scheduleInitialReminders() {
-      await schedulePreSalahReminders(todaysPrayerTimes, reminderMinutesBefore);
-      if (postSalahPromptEnabled) await schedulePostSalahPrompts(todaysPrayerTimes);
+      await schedulePreSalahReminders(prayerTimes, reminderMinutesBefore);
+      if (postSalahPromptEnabled) await schedulePostSalahPrompts(prayerTimes);
     }
 
     scheduleInitialReminders().catch((error) =>
@@ -91,7 +93,7 @@ export default function HomeScreen() {
       scrollRef.current?.scrollTo({ y: 0, animated: false });
 
       async function loadLogs() {
-        const today = new Date().toISOString().split('T')[0];
+        const today = toLocalDateKey(new Date());
         const logs = await db
           .select()
           .from(salahLogs)

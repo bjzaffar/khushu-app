@@ -9,6 +9,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ArrowLeftIcon, EnvelopeIcon, KeyIcon, LockClosedIcon } from 'react-native-heroicons/outline';
 import { supabase } from '@/lib/supabase/client';
+import { resetToAppRoot } from '@/lib/navigation';
 
 type ScreenMode = 'send_link' | 'link_sent' | 'update_password';
 
@@ -82,7 +83,7 @@ export default function ChangePasswordScreen() {
         setLoading(false);
         return;
       }
-      router.replace('/(tabs)');
+      resetToAppRoot();
     } catch (error) {
       setErrorMsg(isNetworkError(error) ? 'No internet connection' : 'Something went wrong. Please try again.');
     }

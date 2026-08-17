@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import Purchases, {
   LOG_LEVEL,
   type CustomerInfo,
@@ -8,6 +9,7 @@ import Purchases, {
 import RevenueCatUI from 'react-native-purchases-ui';
 import { useAppStore } from '@/store/appStore';
 import { premiumStatusFromCustomerInfo } from '@/lib/revenuecat/entitlements';
+import { selectRevenueCatApiKey } from '@/lib/revenuecat/config';
 
 export type RevenueCatPackage = PurchasesPackage;
 export type RevenueCatOffering = PurchasesOffering;
@@ -16,15 +18,15 @@ let configured = false;
 let customerInfoListenerRegistered = false;
 
 function getRevenueCatApiKey(): string | null {
-  if (Platform.OS === 'android') {
-    return process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY?.trim() || null;
-  }
-
-  if (Platform.OS === 'ios') {
-    return process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY?.trim() || null;
-  }
-
-  return null;
+  return selectRevenueCatApiKey(
+    Platform.OS,
+    Constants.executionEnvironment === ExecutionEnvironment.StoreClient,
+    {
+      android: process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY,
+      ios: process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY,
+      testStore: process.env.EXPO_PUBLIC_REVENUECAT_TEST_STORE_API_KEY,
+    }
+  );
 }
 
 function applyCustomerInfo(customerInfo: CustomerInfo): void {
@@ -106,9 +108,13 @@ export async function getCurrentRevenueCatOffering(): Promise<RevenueCatOffering
 
 export async function purchaseRevenueCatPackage(
   selectedPackage: RevenueCatPackage
-): Promise<void> {
+): Promise<boolean> {
+  if (!await configureRevenueCat()) {
+    throw new Error('RevenueCat is not configured for this platform.');
+  }
   const { customerInfo } = await Purchases.purchasePackage(selectedPackage);
   applyCustomerInfo(customerInfo);
+  return premiumStatusFromCustomerInfo(customerInfo) === 'premium';
 }
 
 export async function restoreRevenueCatPurchases(): Promise<boolean> {
@@ -118,19 +124,38 @@ export async function restoreRevenueCatPurchases(): Promise<boolean> {
   return premiumStatusFromCustomerInfo(customerInfo) === 'premium';
 }
 
-export async function openRevenueCatCustomerCenter(): Promise<void> {
-  if (!await configureRevenueCat()) return;
+export async function openRevenueCatCustomerCenter(): Promise<boolean> {
+  if (!await configureRevenueCat()) return false;
   await RevenueCatUI.presentCustomerCenter({
     callbacks: {
       onRestoreCompleted: ({ customerInfo }) => applyCustomerInfo(customerInfo),
     },
   });
   await refreshPremiumStatus();
+  return true;
 }
 
 export function isRevenueCatPurchaseCancellation(error: unknown): boolean {
   return typeof error === 'object'
     && error !== null
-    && 'userCancelled' in error
-    && (error as { userCancelled?: unknown }).userCancelled === true;
+    && (
+      ('userCancelled' in error && (error as { userCancelled?: unknown }).userCancelled === true)
+      || ('code' in error && String((error as { code?: unknown }).code) === '1')
+    );
+}
+
+export function revenueCatPurchaseErrorMessage(error: unknown): string {
+  const code = typeof error === 'object' && error !== null && 'code' in error
+    ? String((error as { code?: unknown }).code)
+    : null;
+
+  if (code === '3') return 'Purchases are not allowed for this store account or device.';
+  if (code === '5') return 'This subscription is not available in your current store region.';
+  if (code === '6') return 'This store account already owns the subscription. Try Restore purchases.';
+  if (code === '10' || code === '32' || code === '35') {
+    return 'Could not connect to the store. Check your connection and try again.';
+  }
+  if (code === '20') return 'Your payment is pending. Premium will activate after the store confirms it.';
+  if (code === '23') return 'Subscriptions are not configured correctly for this build.';
+  return 'The purchase could not be completed. Please try again.';
 }

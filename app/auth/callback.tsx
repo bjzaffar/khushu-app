@@ -7,6 +7,8 @@ import * as SecureStore from 'expo-secure-store';
 import { supabase } from '@/lib/supabase/client';
 import { consumePendingUrl } from '@/lib/deeplink';
 import { useAppStore } from '@/store/appStore';
+import { consumePendingAuthReturn } from '@/lib/authReturn';
+import { resetToAppRoot } from '@/lib/navigation';
 
 function parseParams(str: string): Record<string, string> {
   const params: Record<string, string> = {};
@@ -133,7 +135,9 @@ export default function AuthCallbackScreen() {
           // screen, so persist their completion state here before entering tabs.
           await SecureStore.setItemAsync('onboarding_complete', 'true');
           useAppStore.getState().setHasCompletedOnboarding(true);
-          router.replace('/(tabs)');
+          const returnTo = await consumePendingAuthReturn();
+          if (returnTo === 'paywall') router.dismissTo('/paywall');
+          else resetToAppRoot();
         }
         setStatus('Navigation sent.');
       } catch (e: unknown) {

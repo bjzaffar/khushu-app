@@ -13,6 +13,8 @@ import { useAppStore } from '@/store/appStore';
 import { supabase } from '@/lib/supabase/client';
 import { syncLogsFromCloud } from '@/lib/supabase/sync';
 import * as SecureStore from 'expo-secure-store';
+import { clearPendingAuthReturn, setPendingAuthReturn } from '@/lib/authReturn';
+import { resetToAppRoot } from '@/lib/navigation';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -57,6 +59,7 @@ export default function AccountScreen() {
   const [status, setStatus]   = useState<Status>('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const [confirmEmail, setConfirmEmail] = useState('');
+  const [confirmationLoading, setConfirmationLoading] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -67,10 +70,9 @@ export default function AccountScreen() {
     if (!isFromSettings) {
       await markOnboardingComplete();
       setHasCompletedOnboarding(true);
-      router.replace('/(tabs)');
-    } else if (returnTo === 'paywall') {
-      router.replace('/paywall');
+      resetToAppRoot();
     } else {
+      await clearPendingAuthReturn();
       router.back();
     }
   }
@@ -83,19 +85,23 @@ export default function AccountScreen() {
     await syncLogsFromCloud(userId).catch((error) =>
       console.warn('[supabase] post-login log sync failed:', error)
     );
-    if (!isFromSettings) {
+    await clearPendingAuthReturn();
+    if (returnTo === 'paywall') {
+      router.dismissTo('/paywall');
+    } else if (!isFromSettings) {
       await markOnboardingComplete();
       setHasCompletedOnboarding(true);
-      router.replace('/(tabs)');
+      resetToAppRoot();
     } else {
-      router.back();
+      resetToAppRoot();
     }
   }
 
   // ─── email/password handlers ─────────────────────────────────────────────────
 
   async function handleCheckConfirmation() {
-    setStatus('loading');
+    setConfirmationLoading(true);
+    setErrorMsg('');
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email: confirmEmail,
@@ -103,14 +109,14 @@ export default function AccountScreen() {
       });
       if (error) {
         setErrorMsg('Email not confirmed yet. Check your inbox and try again.');
-        setStatus('error');
         return;
       }
       const userId = data?.user?.id ?? data?.session?.user?.id;
       if (userId) await onAuthSuccess(userId);
     } catch {
       setErrorMsg('Something went wrong. Please try again.');
-      setStatus('error');
+    } finally {
+      setConfirmationLoading(false);
     }
   }
 
@@ -134,10 +140,11 @@ export default function AccountScreen() {
         return;
       }
 
-      const userId = data?.user?.id ?? data?.session?.user?.id;
+      const userId = data?.session?.user?.id;
       if (userId) {
         await onAuthSuccess(userId);
       } else if (tab === 'signup') {
+        if (returnTo === 'paywall') await setPendingAuthReturn('paywall');
         setConfirmEmail(email.trim());
         setStatus('confirm_email');
       }
@@ -153,6 +160,7 @@ export default function AccountScreen() {
     setStatus('loading');
     setErrorMsg('');
     try {
+      if (returnTo === 'paywall') await setPendingAuthReturn('paywall');
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -165,6 +173,7 @@ export default function AccountScreen() {
       await Linking.openURL(data.url);
       // The browser redirects back to auth/callback, where the session is completed.
     } catch {
+      await clearPendingAuthReturn();
       setErrorMsg('Could not open Google sign-in. Please try again.');
       setStatus('error');
     }
@@ -277,15 +286,15 @@ export default function AccountScreen() {
                   <Text className="text-ink-300 text-xs text-center leading-relaxed">
                     Click the link in the email, then come back and tap the button below.
                   </Text>
-                  {status === 'error' && errorMsg ? (
+                  {errorMsg ? (
                     <Text className="text-red-400 text-xs text-center">{errorMsg}</Text>
                   ) : null}
                   <Pressable
                     onPress={handleCheckConfirmation}
-                    disabled={status === 'loading'}
+                    disabled={confirmationLoading}
                     className="bg-sage-600 py-4 rounded-2xl items-center w-full active:bg-sage-700"
                   >
-                    {status === 'loading'
+                    {confirmationLoading
                       ? <ActivityIndicator color="#FFFFFF" />
                       : <Text className="text-white font-semibold text-base">I&apos;ve confirmed my email</Text>
                     }

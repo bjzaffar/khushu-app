@@ -1,5 +1,6 @@
-import { Alert, View, Switch, Pressable, ScrollView, ActivityIndicator, Platform, Modal, type LayoutChangeEvent } from 'react-native';
+import { View, Switch, Pressable, ScrollView, ActivityIndicator, Platform, NativeModules, type LayoutChangeEvent } from 'react-native';
 import { Text } from '@/components/ui/Typography';
+import { AppDialog, type AppDialogTone } from '@/components/ui/AppDialog';
 import { ArrowRightIcon } from 'react-native-heroicons/outline';
 import { CheckIcon } from 'react-native-heroicons/solid';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -35,6 +36,7 @@ import {
 import { CALCULATION_METHODS, type CalculationMethodKey, type AsrMadhab } from '@/types';
 import { WheelPicker } from '@/components/ui/WheelPicker';
 import { clearRevenueCatUser, openRevenueCatCustomerCenter } from '@/lib/revenuecat/service';
+import { resetToAppRoot } from '@/lib/navigation';
 
 const MINUTE_VALUES = Array.from({ length: 60 }, (_, i) => i + 1); // 1–60
 const AnimatedGroup = Animated.createAnimatedComponent(G);
@@ -44,6 +46,45 @@ const STAR_GLOW_LAYERS = [
   { strokeWidth: 2.6, strokeOpacity: 0.18 },
   { strokeWidth: 1.2, strokeOpacity: 0.82 },
 ] as const;
+
+type ToggleRowProps = {
+  label: string;
+  description: string;
+  value: boolean;
+  onValueChange: (value: boolean) => void;
+  showDivider?: boolean;
+};
+
+function ToggleRow({
+  label,
+  description,
+  value,
+  onValueChange,
+  showDivider = false,
+}: ToggleRowProps) {
+  return (
+    <View className={`relative px-5 py-4 flex-row justify-between items-center ${showDivider ? 'border-b border-sand-100' : ''}`}>
+      <Pressable
+        onPress={() => onValueChange(!value)}
+        accessibilityRole="switch"
+        accessibilityLabel={label}
+        accessibilityState={{ checked: value }}
+        className="absolute inset-0 active:bg-sand-100"
+      />
+      <View pointerEvents="none" className="flex-1 pr-4">
+        <Text className="text-ink-700 font-medium text-sm">{label}</Text>
+        <Text className="text-ink-300 text-xs mt-0.5">{description}</Text>
+      </View>
+      <Switch
+        accessible={false}
+        value={value}
+        onValueChange={onValueChange}
+        trackColor={{ false: '#EFE8D8', true: '#5A7A5A' }}
+        thumbColor="#FFFFFF"
+      />
+    </View>
+  );
+}
 
 function StarBorderUpgradeRow() {
   const progress = useSharedValue(0);
@@ -195,6 +236,8 @@ export default function SettingsScreen() {
   const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
   const [showFinalDeleteAccountModal, setShowFinalDeleteAccountModal] = useState(false);
   const [showClearLogsModal, setShowClearLogsModal] = useState(false);
+  const [showDndPermissionDialog, setShowDndPermissionDialog] = useState(false);
+  const [feedbackDialog, setFeedbackDialog] = useState<{ title: string; message: string; tone?: AppDialogTone } | null>(null);
   const [signedInEmail, setSignedInEmail] = useState<string | null>(null);
 
   const scrollRef = useRef<ScrollView>(null);
@@ -247,9 +290,60 @@ export default function SettingsScreen() {
     recalcAndReschedule(calculationMethod, asrMadhab, mins);
   }
 
-  function handleDndToggle(val: boolean) {
-    setDndDuringSalah(val);
-    saveSetting('dnd_during_salah', String(val));
+  async function handleDndToggle(val: boolean) {
+    if (!val || Platform.OS !== 'android') {
+      setDndDuringSalah(val);
+      saveSetting('dnd_during_salah', String(val));
+      return;
+    }
+
+    // Match the native Switch's immediate visual response while the Android
+    // permission check runs. Cancel/failure paths below roll this back.
+    setDndDuringSalah(true);
+
+    try {
+      if (!NativeModules.VolumeManager) throw new Error('VolumeManager native module is unavailable');
+
+      const { VolumeManager } = await import('react-native-volume-manager');
+      const hasDndAccess = await VolumeManager.checkDndAccess();
+      if (hasDndAccess) {
+        setDndDuringSalah(true);
+        saveSetting('dnd_during_salah', 'true');
+        return;
+      }
+
+      setShowDndPermissionDialog(true);
+    } catch (error) {
+      console.warn('[settings] Could not enable automatic silencing:', error);
+      setDndDuringSalah(false);
+      saveSetting('dnd_during_salah', 'false');
+      setFeedbackDialog({
+        title: 'Automatic silencing unavailable',
+        message: 'This build cannot control the Android ringer. Please update or reinstall Khushu and try again.',
+        tone: 'warning',
+      });
+    }
+  }
+
+  async function openDndAccessSettings() {
+    setShowDndPermissionDialog(false);
+    // Keep the preference enabled so it starts working as soon as Android
+    // grants access. Salah Mode verifies the grant each time.
+    setDndDuringSalah(true);
+    saveSetting('dnd_during_salah', 'true');
+    try {
+      const { VolumeManager } = await import('react-native-volume-manager');
+      await VolumeManager.requestDndAccess();
+    } catch (error) {
+      console.warn('[settings] Could not open Android DND access settings:', error);
+      setDndDuringSalah(false);
+      saveSetting('dnd_during_salah', 'false');
+      setFeedbackDialog({
+        title: 'Could not open settings',
+        message: 'Please try again, or allow Do Not Disturb access for Khushu in Android Settings.',
+        tone: 'warning',
+      });
+    }
   }
 
   async function handlePostSalahToggle(val: boolean) {
@@ -332,6 +426,7 @@ export default function SettingsScreen() {
     setShowSignOutModal(false);
     await clearRevenueCatUser();
     await supabase.auth.signOut();
+    resetToAppRoot();
   }
 
   async function confirmDeleteAccount() {
@@ -344,7 +439,11 @@ export default function SettingsScreen() {
       await supabase.auth.signOut();
     } catch (error) {
       console.error('[auth] account deletion failed:', error);
-      Alert.alert('Could not delete account', 'Your account has not been deleted. Please check your connection and try again.');
+      setFeedbackDialog({
+        title: 'Could not delete account',
+        message: 'Your account has not been deleted. Please check your connection and try again.',
+        tone: 'warning',
+      });
     }
   }
 
@@ -424,45 +523,20 @@ export default function SettingsScreen() {
             Notifications
           </Text>
           <View className="bg-white rounded-2xl border border-sand-200 overflow-hidden">
-            <Pressable
-              onPress={() => void handlePostSalahToggle(!postSalahPromptEnabled)}
-              accessibilityRole="switch"
-              accessibilityState={{ checked: postSalahPromptEnabled }}
-              className="px-5 py-4 flex-row justify-between items-center border-b border-sand-100 active:bg-sand-100"
-            >
-              <View className="flex-1 pr-4">
-                <Text className="text-ink-700 font-medium text-sm">Post-Salah prompt</Text>
-                <Text className="text-ink-300 text-xs mt-0.5">
-                  Remind me to log if I haven&apos;t after the prayer window closes.
-                </Text>
-              </View>
-              <Switch
-                value={postSalahPromptEnabled}
-                onValueChange={(value) => void handlePostSalahToggle(value)}
-                trackColor={{ false: '#EFE8D8', true: '#5A7A5A' }}
-                thumbColor="#FFFFFF"
-              />
-            </Pressable>
+            <ToggleRow
+              label="Post-Salah prompt"
+              description="Remind me to log if I haven't after the prayer window closes."
+              value={postSalahPromptEnabled}
+              onValueChange={(value) => void handlePostSalahToggle(value)}
+              showDivider
+            />
             {Platform.OS !== 'ios' && (
-              <Pressable
-                onPress={() => handleDndToggle(!dndDuringSalah)}
-                accessibilityRole="switch"
-                accessibilityState={{ checked: dndDuringSalah }}
-                className="px-5 py-4 flex-row justify-between items-center active:bg-sand-100"
-              >
-                <View className="flex-1 pr-4">
-                  <Text className="text-ink-700 font-medium text-sm">Silence during Salah Mode</Text>
-                  <Text className="text-ink-300 text-xs mt-0.5">
-                    Automatically silences your phone when Salah Mode starts.
-                  </Text>
-                </View>
-                <Switch
-                  value={dndDuringSalah}
-                  onValueChange={handleDndToggle}
-                  trackColor={{ false: '#EFE8D8', true: '#5A7A5A' }}
-                  thumbColor="#FFFFFF"
-                />
-              </Pressable>
+              <ToggleRow
+                label="Silence during Salah Mode"
+                description="Automatically silences your phone when Salah Mode starts."
+                value={dndDuringSalah}
+                onValueChange={(value) => void handleDndToggle(value)}
+              />
             )}
           </View>
         </View>
@@ -716,124 +790,97 @@ export default function SettingsScreen() {
 
         {/* ── Version (hidden debug entry) ────────────────────────────────── */}
         <View className="items-center py-4">
-          <Text className="text-ink-300 text-xs">Khushu App v1.1.0</Text>
+          <Text className="text-ink-300 text-xs">Khushu App v1.1.2</Text>
         </View>
 
       </ScrollView>
 
       {/* ── Sign Out Confirmation Modal ────────────────────────────────── */}
-      <Modal visible={showSignOutModal} transparent animationType="fade">
-        <Pressable className="flex-1 bg-black/30 items-center justify-center px-8" onPress={() => setShowSignOutModal(false)}>
-          <Pressable className="bg-white rounded-2xl p-6 w-full max-w-sm" onPress={(e) => e.stopPropagation()}>
-            <Text className="text-ink-900 text-base font-semibold text-center mb-2">
-              Sign out?
-            </Text>
-            <Text className="text-ink-400 text-sm text-center mb-6">
-              Are you sure you want to sign out?
-            </Text>
-            <View className="flex-row gap-x-3">
-              <Pressable
-                onPress={() => setShowSignOutModal(false)}
-                className="flex-1 py-3 rounded-2xl bg-sand-200 items-center"
-              >
-                <Text className="text-ink-700 font-medium">Cancel</Text>
-              </Pressable>
-              <Pressable
-                onPress={confirmSignOut}
-                className="flex-1 py-3 rounded-2xl bg-red-500 items-center"
-              >
-                <Text className="text-white font-medium">Sign out</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <AppDialog
+        visible={showSignOutModal}
+        title="Sign out?"
+        message="Are you sure you want to sign out?"
+        tone="warning"
+        onDismiss={() => setShowSignOutModal(false)}
+        actions={[
+          { label: 'Cancel', tone: 'secondary', onPress: () => setShowSignOutModal(false) },
+          { label: 'Sign out', tone: 'destructive', onPress: confirmSignOut },
+        ]}
+      />
 
       {/* ── Delete Account Confirmation Modal ──────────────────────────── */}
-      <Modal visible={showDeleteAccountModal} transparent animationType="fade">
-        <Pressable className="flex-1 bg-black/30 items-center justify-center px-8" onPress={() => setShowDeleteAccountModal(false)}>
-          <Pressable className="bg-white rounded-2xl p-6 w-full max-w-sm" onPress={(e) => e.stopPropagation()}>
-            <Text className="text-ink-900 text-base font-semibold text-center mb-2">
-              Delete account?
-            </Text>
-            <Text className="text-ink-400 text-sm text-center mb-6">
-              This will permanently delete your account. Your locally stored logs will remain on this device, but your account and any cloud data will be gone forever.
-            </Text>
-            <View className="flex-row gap-x-3">
-              <Pressable
-                onPress={() => setShowDeleteAccountModal(false)}
-                className="flex-1 py-3 rounded-2xl bg-sand-200 items-center"
-              >
-                <Text className="text-ink-700 font-medium">Cancel</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  setShowDeleteAccountModal(false);
-                  setShowFinalDeleteAccountModal(true);
-                }}
-                className="flex-1 py-3 rounded-2xl bg-red-500 items-center"
-              >
-                <Text className="text-white font-medium">Delete</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <AppDialog
+        visible={showDeleteAccountModal}
+        title="Delete account?"
+        message="This will permanently delete your account. Your locally stored logs will remain on this device, but your account and cloud data will be gone forever."
+        tone="destructive"
+        onDismiss={() => setShowDeleteAccountModal(false)}
+        actions={[
+          { label: 'Cancel', tone: 'secondary', onPress: () => setShowDeleteAccountModal(false) },
+          {
+            label: 'Delete',
+            tone: 'destructive',
+            onPress: () => {
+              setShowDeleteAccountModal(false);
+              setShowFinalDeleteAccountModal(true);
+            },
+          },
+        ]}
+      />
 
       {/* ── Clear Logs Confirmation Modal ──────────────────────────────── */}
-      <Modal visible={showFinalDeleteAccountModal} transparent animationType="fade">
-        <Pressable className="flex-1 bg-black/30 items-center justify-center px-8" onPress={() => setShowFinalDeleteAccountModal(false)}>
-          <Pressable className="bg-white rounded-2xl p-6 w-full max-w-sm" onPress={(e) => e.stopPropagation()}>
-            <Text className="text-ink-900 text-base font-semibold text-center mb-2">
-              Permanently delete account?
-            </Text>
-            <Text className="text-ink-400 text-sm text-center mb-6">
-              This cannot be undone.
-            </Text>
-            <View className="flex-row gap-x-3">
-              <Pressable
-                onPress={() => setShowFinalDeleteAccountModal(false)}
-                className="flex-1 py-3 rounded-2xl bg-sand-200 items-center"
-              >
-                <Text className="text-ink-700 font-medium">Cancel</Text>
-              </Pressable>
-              <Pressable
-                onPress={confirmDeleteAccount}
-                className="flex-1 py-3 rounded-2xl bg-red-500 items-center"
-              >
-                <Text className="text-white font-medium">Delete account</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <AppDialog
+        visible={showFinalDeleteAccountModal}
+        title="Permanently delete account?"
+        message="This cannot be undone."
+        tone="destructive"
+        onDismiss={() => setShowFinalDeleteAccountModal(false)}
+        actions={[
+          { label: 'Cancel', tone: 'secondary', onPress: () => setShowFinalDeleteAccountModal(false) },
+          { label: 'Delete account', tone: 'destructive', onPress: confirmDeleteAccount },
+        ]}
+      />
 
-      <Modal visible={showClearLogsModal} transparent animationType="fade">
-        <Pressable className="flex-1 bg-black/30 items-center justify-center px-8" onPress={() => setShowClearLogsModal(false)}>
-          <Pressable className="bg-white rounded-2xl p-6 w-full max-w-sm" onPress={(e) => e.stopPropagation()}>
-            <Text className="text-ink-900 text-base font-semibold text-center mb-2">
-              Clear all log history?
-            </Text>
-            <Text className="text-ink-400 text-sm text-center mb-6">
-              This will permanently delete all your logged salah reflections. This cannot be undone.
-            </Text>
-            <View className="flex-row gap-x-3">
-              <Pressable
-                onPress={() => setShowClearLogsModal(false)}
-                className="flex-1 py-3 rounded-2xl bg-sand-200 items-center"
-              >
-                <Text className="text-ink-700 font-medium">Cancel</Text>
-              </Pressable>
-              <Pressable
-                onPress={confirmClearLogs}
-                className="flex-1 py-3 rounded-2xl bg-red-500 items-center"
-              >
-                <Text className="text-white font-medium">Clear</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <AppDialog
+        visible={showClearLogsModal}
+        title="Clear all log history?"
+        message="This will permanently delete all your logged salah reflections. This cannot be undone."
+        tone="destructive"
+        onDismiss={() => setShowClearLogsModal(false)}
+        actions={[
+          { label: 'Cancel', tone: 'secondary', onPress: () => setShowClearLogsModal(false) },
+          { label: 'Clear', tone: 'destructive', onPress: confirmClearLogs },
+        ]}
+      />
+
+      <AppDialog
+        visible={showDndPermissionDialog}
+        title="Allow Do Not Disturb access"
+        message="Android requires this special access before Khushu can silence your phone. On the next screen, enable Khushu, then return to the app."
+        tone="info"
+        dismissOnBackdrop={false}
+        actions={[
+          {
+            label: 'Cancel',
+            tone: 'secondary',
+            onPress: () => {
+              setShowDndPermissionDialog(false);
+              setDndDuringSalah(false);
+              saveSetting('dnd_during_salah', 'false');
+            },
+          },
+          { label: 'Open settings', onPress: () => void openDndAccessSettings() },
+        ]}
+      />
+
+      <AppDialog
+        visible={feedbackDialog !== null}
+        title={feedbackDialog?.title ?? ''}
+        message={feedbackDialog?.message ?? ''}
+        tone={feedbackDialog?.tone}
+        onDismiss={() => setFeedbackDialog(null)}
+        actions={[{ label: 'OK', onPress: () => setFeedbackDialog(null) }]}
+      />
 
     </SafeAreaView>
   );

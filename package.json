@@ -8,7 +8,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test:revenuecat": "vitest run lib/revenuecat",
+    "test:revenuecat": "vitest run lib/revenuecat --pool=threads --maxWorkers=1 --no-file-parallelism",
     "android:release": "node --max-old-space-size=8192 ./node_modules/@expo/cli/build/bin/cli run:android --variant release"
   },
   "dependencies": {

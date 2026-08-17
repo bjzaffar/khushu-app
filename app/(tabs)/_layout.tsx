@@ -1,16 +1,7 @@
 import { Tabs } from 'expo-router';
-import { Text } from '@/components/ui/Typography';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowTrendingUpIcon, Cog6ToothIcon, HomeIcon, PencilSquareIcon } from 'react-native-heroicons/outline';
 import { ArrowTrendingUpIcon as ArrowTrendingUpSolidIcon, Cog6ToothIcon as Cog6ToothSolidIcon, HomeIcon as HomeSolidIcon, PencilSquareIcon as PencilSquareSolidIcon } from 'react-native-heroicons/solid';
-
-function TabIcon({ focused, label }: { focused: boolean; label: string }) {
-  return (
-    <Text className={`text-xs mt-1 ${focused ? 'text-sage-600 font-semibold' : 'text-ink-300'}`}>
-      {label}
-    </Text>
-  );
-}
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
@@ -29,6 +20,7 @@ export default function TabLayout() {
         tabBarActiveTintColor: '#5A7A5A',
         tabBarInactiveTintColor: '#9B9189',
         tabBarLabelStyle: {
+          fontFamily: 'PlusJakartaSans_500Medium',
           fontSize: 11,
           fontWeight: '500',
         },

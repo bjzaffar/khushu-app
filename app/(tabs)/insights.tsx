@@ -5,10 +5,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useCallback, useState, useEffect, useRef } from 'react';
 import { useFocusEffect, router } from 'expo-router';
 import { useScrollToTop } from '@react-navigation/native';
-import { avg, count, gte, eq, and, asc, isNotNull } from 'drizzle-orm';
+import { avg, count, gte, lte, eq, and, asc, isNotNull } from 'drizzle-orm';
 import { selectIsPremium, useAppStore } from '@/store/appStore';
 import { db } from '@/db/database';
 import { salahLogs, settings } from '@/db/schema';
+import {
+  buildChartPoints as buildLogChartPoints,
+  formatChartPointDate,
+  getChartDateBounds,
+  type ChartPoint as LogChartPoint,
+  type ChartTimeframe,
+} from '@/lib/insights/chart';
 import {
   SALAH_NAMES,
   SALAH_DISPLAY_NAMES,
@@ -44,11 +51,6 @@ interface InsightsData {
   reminderEffectiveness: ReminderEffectivenessEntry[];
 }
 
-interface ChartPoint {
-  label: string;
-  avg: number; // 1–5
-}
-
 // ── Colour tokens (raw values — NativeWind not available for inline styles) ──
 
 const C = {
@@ -81,77 +83,12 @@ function Bar({ pct, height = 8 }: { pct: number; height?: number }) {
 // ── Chart helpers ─────────────────────────────────────────────────────────────
 
 const CHART_H = 120;
-const PAD_V = 6; // vertical padding so dots don't clip the top/bottom edge
+const PAD_V = 10; // room for the selection ring at ratings 1 and 5
+const PAD_H = 10;
+const Y_AXIS_W = 18;
 
 function chartY(rating: number): number {
   return PAD_V + ((5 - rating) / 4) * (CHART_H - 2 * PAD_V);
-}
-
-function buildChartPoints(
-  rows: { logDate: string; focusRating: number }[],
-  days: number
-): ChartPoint[] {
-  if (rows.length === 0) return [];
-
-  if (days === 0) {
-    // All time — group by month
-    const buckets: Record<string, number[]> = {};
-    for (const row of rows) {
-      const key = row.logDate.slice(0, 7); // "YYYY-MM"
-      if (!buckets[key]) buckets[key] = [];
-      buckets[key].push(row.focusRating);
-    }
-    return Object.entries(buckets)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([key, ratings]) => {
-        const [year, month] = key.split('-');
-        const label = new Date(Number(year), Number(month) - 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
-        return { label, avg: ratings.reduce((s, r) => s + r, 0) / ratings.length };
-      });
-  }
-
-  if (days === 90) {
-    // Bucket into 7-day groups from the start of the window
-    const startMs = Date.now() - 90 * 24 * 60 * 60 * 1000;
-    const buckets: Record<number, number[]> = {};
-    for (const row of rows) {
-      const bucket = Math.floor(
-        (new Date(row.logDate + 'T12:00:00').getTime() - startMs) /
-          (7 * 24 * 60 * 60 * 1000)
-      );
-      if (!buckets[bucket]) buckets[bucket] = [];
-      buckets[bucket].push(row.focusRating);
-    }
-    return Object.entries(buckets)
-      .sort(([a], [b]) => Number(a) - Number(b))
-      .map(([w, ratings]) => {
-        const d = new Date(startMs + Number(w) * 7 * 24 * 60 * 60 * 1000);
-        return {
-          label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-          avg: ratings.reduce((s, r) => s + r, 0) / ratings.length,
-        };
-      });
-  }
-
-  // Group by day
-  const dayMap: Record<string, number[]> = {};
-  for (const row of rows) {
-    if (!dayMap[row.logDate]) dayMap[row.logDate] = [];
-    dayMap[row.logDate].push(row.focusRating);
-  }
-  return Object.entries(dayMap)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, ratings]) => {
-      const d = new Date(date + 'T12:00:00');
-      const label =
-        days === 7
-          ? d.toLocaleDateString('en-US', { weekday: 'short' })
-          : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      return {
-        label,
-        avg: ratings.reduce((s, r) => s + r, 0) / ratings.length,
-      };
-    });
 }
 
 // ── computeSalahInsights ──────────────────────────────────────────────────────
@@ -224,23 +161,23 @@ function computeSalahInsights(
 
 // ── KhushuChart ───────────────────────────────────────────────────────────────
 
-function KhushuChart({ points }: { points: ChartPoint[] }) {
+function KhushuChart({ points, timeframe }: { points: LogChartPoint[]; timeframe: ChartTimeframe }) {
   const [cw, setCw] = useState(0);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const DOT = 4;
+  const HIT_SIZE = 28;
+  const RING_SIZE = 14;
   const n = points.length;
+  const selectedPoint = points.find((point) => point.id === selectedId) ?? null;
 
-  const getX = (i: number) => (n <= 1 ? cw / 2 : (i / (n - 1)) * cw);
+  useEffect(() => {
+    setSelectedId(null);
+  }, [points, timeframe]);
 
-  // At most 5 evenly-spaced x-axis labels
-  const labelSet = new Set<number>();
-  if (n <= 5) {
-    for (let i = 0; i < n; i++) labelSet.add(i);
-  } else {
-    labelSet.add(0);
-    labelSet.add(n - 1);
-    const step = (n - 1) / 3;
-    for (let k = 1; k <= 2; k++) labelSet.add(Math.round(k * step));
-  }
+  const getX = (i: number) =>
+    n <= 1
+      ? Y_AXIS_W + (cw - Y_AXIS_W) / 2
+      : Y_AXIS_W + PAD_H + (i / (n - 1)) * (cw - Y_AXIS_W - 2 * PAD_H);
 
   if (n === 0) {
     return (
@@ -262,7 +199,7 @@ function KhushuChart({ points }: { points: ChartPoint[] }) {
                 key={v}
                 style={{
                   position: 'absolute',
-                  left: 0,
+                  left: Y_AXIS_W,
                   right: 0,
                   top: chartY(v),
                   height: 1,
@@ -279,6 +216,8 @@ function KhushuChart({ points }: { points: ChartPoint[] }) {
                   position: 'absolute',
                   top: chartY(v) - 5,
                   left: 0,
+                  width: Y_AXIS_W - 5,
+                  textAlign: 'right',
                   fontSize: 8,
                   lineHeight: 10,
                   color: C.ink300,
@@ -287,6 +226,20 @@ function KhushuChart({ points }: { points: ChartPoint[] }) {
                 {v}
               </Text>
             ))}
+
+            {selectedPoint && (
+              <View
+                pointerEvents="none"
+                style={{
+                  position: 'absolute',
+                  left: getX(points.indexOf(selectedPoint)) - 0.5,
+                  top: 0,
+                  width: 1,
+                  height: CHART_H,
+                  backgroundColor: 'rgba(90, 122, 90, 0.28)',
+                }}
+              />
+            )}
 
             {/* Line segments */}
             {points.slice(0, -1).map((p, i) => {
@@ -313,42 +266,67 @@ function KhushuChart({ points }: { points: ChartPoint[] }) {
             })}
 
             {/* Dots */}
-            {points.map((p, i) => (
-              <View
-                key={i}
-                style={{
-                  position: 'absolute',
-                  left: getX(i) - DOT,
-                  top: chartY(p.avg) - DOT,
-                  width: DOT * 2,
-                  height: DOT * 2,
-                  borderRadius: DOT,
-                  backgroundColor: C.sage,
-                }}
-              />
-            ))}
-          </View>
-
-          {/* X-axis labels */}
-          <View style={{ height: 18, marginTop: 4, position: 'relative' }}>
-            {points.map((p, i) => {
-              if (!labelSet.has(i)) return null;
+            {points.map((point, i) => {
+              const selected = point.id === selectedId;
+              const dateLabel = formatChartPointDate(point.logDate, timeframe);
               return (
-                <Text
-                  key={i}
+                <Pressable
+                  key={point.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${dateLabel}, average khushu rating ${point.avg.toFixed(1)} out of 5 from ${point.logCount} ${point.logCount === 1 ? 'prayer' : 'prayers'}`}
+                  accessibilityState={{ selected }}
+                  onPress={() => setSelectedId(point.id)}
+                  hitSlop={4}
                   style={{
                     position: 'absolute',
-                    left: getX(i) - 20,
-                    width: 40,
-                    textAlign: 'center',
-                    fontSize: 9,
-                    color: C.ink300,
+                    left: getX(i) - HIT_SIZE / 2,
+                    top: chartY(point.avg) - HIT_SIZE / 2,
+                    width: HIT_SIZE,
+                    height: HIT_SIZE,
+                    alignItems: 'center',
+                    justifyContent: 'center',
                   }}
                 >
-                  {p.label}
-                </Text>
+                  {selected && (
+                    <View
+                      pointerEvents="none"
+                      style={{
+                        position: 'absolute',
+                        width: RING_SIZE,
+                        height: RING_SIZE,
+                        borderRadius: RING_SIZE / 2,
+                        borderWidth: 1,
+                        borderColor: 'rgba(90, 122, 90, 0.48)',
+                      }}
+                    />
+                  )}
+                  <View
+                    pointerEvents="none"
+                    style={{
+                      width: DOT * 2,
+                      height: DOT * 2,
+                      borderRadius: DOT,
+                      backgroundColor: C.sage,
+                    }}
+                  />
+                </Pressable>
               );
             })}
+          </View>
+
+          <View style={{ height: 28, marginTop: 8, justifyContent: 'center' }}>
+            {selectedPoint && (
+              <Text
+                style={{
+                  color: C.sage,
+                  fontSize: 15,
+                  fontWeight: '500',
+                  textAlign: 'center',
+                }}
+              >
+                {formatChartPointDate(selectedPoint.logDate, timeframe)} • {selectedPoint.avg.toFixed(1)} avg
+              </Text>
+            )}
           </View>
         </>
       )}
@@ -394,23 +372,44 @@ function Dropdown<T extends string>({
         <Text style={{ color: C.ink300, fontSize: 11 }}>▾</Text>
       </Pressable>
 
-      <Modal visible={open} transparent animationType="fade">
+      <Modal
+        visible={open}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        navigationBarTranslucent
+        onRequestClose={() => setOpen(false)}
+      >
         <Pressable
           style={{
             flex: 1,
-            backgroundColor: 'rgba(0,0,0,0.3)',
+            backgroundColor: 'rgba(0,0,0,0.4)',
             justifyContent: 'center',
             alignItems: 'center',
-            paddingHorizontal: 32,
+            paddingHorizontal: 24,
           }}
           onPress={() => setOpen(false)}
         >
           {/* Inner pressable prevents backdrop-tap from propagating through the list */}
-          <Pressable style={{ width: '100%' }}>
+          <Pressable
+            accessibilityViewIsModal
+            onPress={(event) => event.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: 384,
+              shadowColor: '#1A1917',
+              shadowOffset: { width: 0, height: 12 },
+              shadowOpacity: 0.16,
+              shadowRadius: 24,
+              elevation: 12,
+            }}
+          >
             <View
               style={{
                 backgroundColor: C.white,
-                borderRadius: 20,
+                borderRadius: 24,
+                borderWidth: 1,
+                borderColor: C.sand200,
                 overflow: 'hidden',
                 width: '100%',
                 paddingHorizontal: 12,
@@ -551,9 +550,9 @@ const TIMEFRAME_OPTIONS: { value: '7' | '30' | '90' | 'all'; label: string }[] =
 export default function InsightsScreen() {
   const isPremium = useAppStore(selectIsPremium);
   const [data, setData] = useState<InsightsData | null>(null);
-  const [chartPoints, setChartPoints] = useState<ChartPoint[]>([]);
+  const [chartPoints, setChartPoints] = useState<LogChartPoint[]>([]);
   const [salahFilter, setSalahFilter] = useState<SalahName | 'all'>('all');
-  const [timeframe, setTimeframe] = useState<'7' | '30' | '90' | 'all'>('7');
+  const [timeframe, setTimeframe] = useState<ChartTimeframe>('7');
 
   // Always-fresh ref so the useFocusEffect stable callback can read current filter values
   const filtersRef = useRef({ salahFilter, timeframe });
@@ -562,25 +561,29 @@ export default function InsightsScreen() {
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTop(scrollRef);
 
-  function loadChartData(filter: SalahName | 'all', tf: '7' | '30' | '90' | 'all') {
-    const rows =
-      tf === 'all'
-        ? filter === 'all'
-          ? db.select({ logDate: salahLogs.logDate, focusRating: salahLogs.focusRating }).from(salahLogs).all()
-          : db.select({ logDate: salahLogs.logDate, focusRating: salahLogs.focusRating }).from(salahLogs).where(eq(salahLogs.salahName, filter)).all()
-        : (() => {
-            const fromDate = new Date(Date.now() - Number(tf) * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-            return filter === 'all'
-              ? db.select({ logDate: salahLogs.logDate, focusRating: salahLogs.focusRating }).from(salahLogs).where(gte(salahLogs.logDate, fromDate)).all()
-              : db.select({ logDate: salahLogs.logDate, focusRating: salahLogs.focusRating }).from(salahLogs).where(and(gte(salahLogs.logDate, fromDate), eq(salahLogs.salahName, filter))).all();
-          })();
-    setChartPoints(buildChartPoints(rows, tf === 'all' ? 0 : Number(tf)));
+  function loadChartData(filter: SalahName | 'all', tf: ChartTimeframe) {
+    const { fromDate, toDate } = getChartDateBounds(tf);
+    const fields = {
+      id: salahLogs.id,
+      logDate: salahLogs.logDate,
+      focusRating: salahLogs.focusRating,
+      loggedAt: salahLogs.loggedAt,
+    };
+
+    const rows = fromDate
+      ? filter === 'all'
+        ? db.select(fields).from(salahLogs).where(and(gte(salahLogs.logDate, fromDate), lte(salahLogs.logDate, toDate))).all()
+        : db.select(fields).from(salahLogs).where(and(gte(salahLogs.logDate, fromDate), lte(salahLogs.logDate, toDate), eq(salahLogs.salahName, filter))).all()
+      : filter === 'all'
+        ? db.select(fields).from(salahLogs).where(lte(salahLogs.logDate, toDate)).all()
+        : db.select(fields).from(salahLogs).where(and(lte(salahLogs.logDate, toDate), eq(salahLogs.salahName, filter))).all();
+
+    setChartPoints(buildLogChartPoints(rows));
   }
 
   function loadData() {
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-      .toISOString()
-      .split('T')[0];
+    const { fromDate, toDate: today } = getChartDateBounds('7');
+    const sevenDaysAgo = fromDate ?? today;
     // Always use 7-day window for averages
     const avgWindowDaysAgo = sevenDaysAgo;
     // The empty-state threshold reflects complete history for every tier.
@@ -590,14 +593,14 @@ export default function InsightsScreen() {
     const weekRow = db
       .select({ n: count() })
       .from(salahLogs)
-      .where(gte(salahLogs.logDate, sevenDaysAgo))
+      .where(and(gte(salahLogs.logDate, sevenDaysAgo), lte(salahLogs.logDate, today)))
       .get();
     const weekLogs = weekRow?.n ?? 0;
 
     const avgRows = db
       .select({ salahName: salahLogs.salahName, avgRating: avg(salahLogs.focusRating) })
       .from(salahLogs)
-      .where(gte(salahLogs.logDate, avgWindowDaysAgo))
+      .where(and(gte(salahLogs.logDate, avgWindowDaysAgo), lte(salahLogs.logDate, today)))
       .groupBy(salahLogs.salahName)
       .all();
 
@@ -780,7 +783,7 @@ export default function InsightsScreen() {
                     onLockedPress={() => router.push('/paywall')}
                   />
                 </View>
-                <KhushuChart points={chartPoints} />
+                <KhushuChart points={chartPoints} timeframe={timeframe} />
               </View>
             </View>
 

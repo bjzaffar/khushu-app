@@ -4,11 +4,11 @@ import {
   Pressable,
   KeyboardAvoidingView,
   Platform,
-  Modal,
   Animated,
   Easing,
 } from 'react-native';
 import { Text, TextInput } from '@/components/ui/Typography';
+import { AppDialog } from '@/components/ui/AppDialog';
 import { ArrowUturnUpIcon, StarIcon, XMarkIcon } from 'react-native-heroicons/outline';
 import { CheckCircleIcon as CheckCircleSolidIcon, StarIcon as StarSolidIcon } from 'react-native-heroicons/solid';
 
@@ -21,6 +21,7 @@ import { db } from '@/db/database';
 import { salahLogs, settings } from '@/db/schema';
 import { selectIsPremium, useAppStore } from '@/store/appStore';
 import { queueClassificationUpdate, queueLogUpsert } from '@/lib/supabase/sync';
+import { toLocalDateKey } from '@/lib/date';
 import {
   SALAH_NAMES,
   SALAH_DISPLAY_NAMES,
@@ -57,9 +58,7 @@ const DAY_LABELS: Record<LogDay, string> = {
 function getLogDateForDay(day: LogDay): string {
   const date = new Date();
   if (day === 'yesterday') date.setDate(date.getDate() - 1);
-  // Keep the app's existing log-date convention so historical records and
-  // cloud-sync keys continue to line up with already-saved logs.
-  return date.toISOString().split('T')[0];
+  return toLocalDateKey(date);
 }
 
 function saveSettingJSON(key: string, value: unknown) {
@@ -819,71 +818,49 @@ export default function LogScreen() {
       </SafeAreaView>
 
       {/* ── Relog Confirmation Modal ──────────────────────────────────── */}
-      <Modal visible={relogSalah !== null} transparent animationType="fade">
-        <Pressable className="flex-1 bg-black/30 items-center justify-center px-8" onPress={() => setRelogSalah(null)}>
-          <Pressable className="bg-white rounded-2xl p-6 w-full max-w-sm" onPress={(e) => e.stopPropagation()}>
-            <Text className="text-ink-900 text-base font-semibold text-center mb-2">
-              Relog Salah?
-            </Text>
-            <Text className="text-ink-400 text-sm text-center mb-6">
-              {relogSalah ? `${SALAH_DISPLAY_NAMES[relogSalah]} has already been logged ${activeDay}.` : ''}
-              {'\n'}Would you like to relog it?
-            </Text>
-            <View className="flex-row gap-x-3">
-              <Pressable
-                onPress={() => setRelogSalah(null)}
-                className="flex-1 py-3 rounded-2xl bg-sand-200 items-center"
-              >
-                <Text className="text-ink-700 font-medium">No</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  if (relogSalah) {
-                    setSelectedSalah(relogSalah);
-                    setIsRelogging(true);
-                  }
-                  setRelogSalah(null);
-                }}
-                className="flex-1 py-3 rounded-2xl bg-sage-600 items-center"
-              >
-                <Text className="text-white font-medium">Yes</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <AppDialog
+        visible={relogSalah !== null}
+        title="Relog Salah?"
+        message={relogSalah
+          ? `${SALAH_DISPLAY_NAMES[relogSalah]} has already been logged ${activeDay}. Would you like to relog it?`
+          : ''}
+        onDismiss={() => setRelogSalah(null)}
+        actions={[
+          { label: 'No', tone: 'secondary', onPress: () => setRelogSalah(null) },
+          {
+            label: 'Yes',
+            onPress: () => {
+              if (relogSalah) {
+                setSelectedSalah(relogSalah);
+                setIsRelogging(true);
+              }
+              setRelogSalah(null);
+            },
+          },
+        ]}
+      />
 
       {/* ── Permanent Delete Confirmation Modal ───────────────────────── */}
-      <Modal visible={deleteArchived !== null} transparent animationType="fade">
-        <Pressable className="flex-1 bg-black/30 items-center justify-center px-8" onPress={() => setDeleteArchived(null)}>
-          <Pressable className="bg-white rounded-2xl p-6 w-full max-w-sm" onPress={(e) => e.stopPropagation()}>
-            <Text className="text-ink-900 text-base font-semibold text-center mb-2">
-              Delete Distraction?
-            </Text>
-            <Text className="text-ink-400 text-sm text-center mb-6">
-              {deleteArchived ? `"${deleteArchived.label}" will be permanently deleted.` : ''}
-              {'\n'}It won&apos;t be available when logging new reflections.
-            </Text>
-            <View className="flex-row gap-x-3">
-              <Pressable
-                onPress={() => setDeleteArchived(null)}
-                className="flex-1 py-3 rounded-2xl bg-sand-200 items-center"
-              >
-                <Text className="text-ink-700 font-medium">Cancel</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  if (deleteArchived) handlePermanentDelete(deleteArchived.key);
-                  setDeleteArchived(null);
-                }}
-                className="flex-1 py-3 rounded-2xl bg-red-500 items-center"
-              >
-                <Text className="text-white font-medium">Delete</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <AppDialog
+        visible={deleteArchived !== null}
+        title="Delete distraction?"
+        message={deleteArchived
+          ? `"${deleteArchived.label}" will be permanently deleted. It won't be available when logging new reflections.`
+          : ''}
+        tone="destructive"
+        onDismiss={() => setDeleteArchived(null)}
+        actions={[
+          { label: 'Cancel', tone: 'secondary', onPress: () => setDeleteArchived(null) },
+          {
+            label: 'Delete',
+            tone: 'destructive',
+            onPress: () => {
+              if (deleteArchived) handlePermanentDelete(deleteArchived.key);
+              setDeleteArchived(null);
+            },
+          },
+        ]}
+      />
     </KeyboardAvoidingView>
   );
 }

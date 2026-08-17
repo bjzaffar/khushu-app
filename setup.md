@@ -152,11 +152,19 @@ Set these EAS/CI environment values:
 ```text
 EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY=...
 EXPO_PUBLIC_REVENUECAT_IOS_API_KEY=...
-EXPO_PUBLIC_PRIVACY_POLICY_URL=https://...
-EXPO_PUBLIC_TERMS_OF_USE_URL=https://...
+EXPO_PUBLIC_PRIVACY_POLICY_URL=https://getkhushu.netlify.app/privacy
+EXPO_PUBLIC_TERMS_OF_USE_URL=https://getkhushu.netlify.app/terms
 ```
 
 The app already reads these exact variables. Use RevenueCat’s public platform SDK keys only. Never place a RevenueCat `sk_` secret key, Apple secret, Apple `.p8` file, or Google service-account JSON in the app or repository.
+
+To exercise RevenueCat inside Expo Go, optionally add its separate Test Store public SDK key to `.env.local`:
+
+```text
+EXPO_PUBLIC_REVENUECAT_TEST_STORE_API_KEY=...
+```
+
+If it is omitted, RevenueCat stays disabled and premium remains locked in Expo Go. Native development and release builds ignore this key and use their Android or iOS public SDK key instead.
 
 Build new iOS and Android release builds after setting the keys; already-installed builds do not receive new environment values.
 
