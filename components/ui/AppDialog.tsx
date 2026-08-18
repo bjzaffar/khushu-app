@@ -22,6 +22,7 @@ type AppDialogProps = {
   title: string;
   message: string;
   actions: AppDialogAction[];
+  actionLayout?: 'auto' | 'horizontal' | 'vertical';
   tone?: AppDialogTone;
   onDismiss?: () => void;
   dismissOnBackdrop?: boolean;
@@ -45,12 +46,14 @@ export function AppDialog({
   title,
   message,
   actions,
+  actionLayout = 'auto',
   tone = 'info',
   onDismiss,
   dismissOnBackdrop = true,
 }: AppDialogProps) {
   const { Icon, icon, circle } = toneStyles[tone];
-  const horizontalActions = actions.length === 2;
+  const horizontalActions = actionLayout === 'horizontal'
+    || (actionLayout === 'auto' && actions.length === 2);
 
   return (
     <Modal

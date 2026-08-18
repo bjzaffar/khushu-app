@@ -6,10 +6,11 @@ import {
   Platform,
   Animated,
   Easing,
+  Modal,
 } from 'react-native';
 import { Text, TextInput } from '@/components/ui/Typography';
 import { AppDialog } from '@/components/ui/AppDialog';
-import { ArrowUturnUpIcon, StarIcon, XMarkIcon } from 'react-native-heroicons/outline';
+import { PencilIcon, StarIcon, XMarkIcon } from 'react-native-heroicons/outline';
 import { CheckCircleIcon as CheckCircleSolidIcon, StarIcon as StarSolidIcon } from 'react-native-heroicons/solid';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,7 +21,12 @@ import { eq, and } from 'drizzle-orm';
 import { db } from '@/db/database';
 import { salahLogs, settings } from '@/db/schema';
 import { selectIsPremium, useAppStore } from '@/store/appStore';
-import { queueClassificationUpdate, queueLogUpsert } from '@/lib/supabase/sync';
+import {
+  deleteLogEverywhere,
+  queueClassificationUpdate,
+  queueDistractionSettingsSync,
+  queueLogUpsert,
+} from '@/lib/supabase/sync';
 import { toLocalDateKey } from '@/lib/date';
 import {
   SALAH_NAMES,
@@ -31,7 +37,11 @@ import {
 } from '@/types';
 import { getCurrentSalahWindow } from '@/lib/prayer/prayerTimes';
 import { cancelPostSalahForSalah, cancelReEngagementNotification } from '@/lib/notifications/notificationService';
-import { classifyDistraction, generateAIReminder } from '@/lib/notifications/reminderContent';
+import {
+  classifyDistraction,
+  clearCachedReminder,
+  generateAIReminder,
+} from '@/lib/notifications/reminderContent';
 import { writeWidgetData } from '@/lib/widget/widgetData';
 
 // Built-in keys excluding 'other' (rendered separately)
@@ -116,6 +126,8 @@ export default function LogScreen() {
   const [savedSalahName, setSavedSalahName] = useState<SalahName>('fajr');
   const [relogSalah, setRelogSalah] = useState<SalahName | null>(null);
   const [deleteArchived, setDeleteArchived] = useState<{ key: string; label: string } | null>(null);
+  const [editDistraction, setEditDistraction] = useState<{ key: string; label: string } | null>(null);
+  const [distractionNameInput, setDistractionNameInput] = useState('');
   const [logsByDay, setLogsByDay] = useState<Record<LogDay, Record<string, number>>>({
     today: {},
     yesterday: {},
@@ -244,6 +256,8 @@ export default function LogScreen() {
         setIsRatingGestureActive(false);
         setRelogSalah(null);
         setDeleteArchived(null);
+        setEditDistraction(null);
+        setDistractionNameInput('');
       };
     }, [dayTransition, loadLogsForDay, params.salah, resetFormForDay])
   );
@@ -262,6 +276,17 @@ export default function LogScreen() {
     saveSettingJSON('custom_distraction_labels', [...labels, distraction]);
   }
 
+  function syncDistractionSettings() {
+    queueDistractionSettingsSync(userId ?? undefined).catch((error) =>
+      console.warn('[sync] distraction settings update queued for retry:', error)
+    );
+  }
+
+  function saveArchivedDistractions(distractions: { key: string; label: string }[]) {
+    saveSettingJSON('deleted_custom_distractions', distractions);
+    syncDistractionSettings();
+  }
+
   function handleAddCustomDistraction() {
     const label = otherInputText.trim().slice(0, CUSTOM_DISTRACTION_MAX_LENGTH);
     if (!label) return;
@@ -270,6 +295,7 @@ export default function LogScreen() {
     setCustomDistractions(newList);
     saveSettingJSON('custom_distractions', newList);
     rememberCustomLabel({ key, label });
+    syncDistractionSettings();
     setSelectedDistractions([key]);
     setOtherInputText('');
     setShowOtherInput(false);
@@ -279,6 +305,7 @@ export default function LogScreen() {
     const newHidden = [...hiddenBuiltins, key];
     setHiddenBuiltins(newHidden);
     saveSettingJSON('hidden_distractions', newHidden);
+    syncDistractionSettings();
     setSelectedDistractions((prev) => prev.filter((k) => k !== key));
   }
 
@@ -292,14 +319,14 @@ export default function LogScreen() {
     if (deleted) {
       rememberCustomLabel(deleted);
       const archive = getSettingJSON('deleted_custom_distractions') as { key: string; label: string }[];
-      archive.push({ key: deleted.key, label: deleted.label });
-      saveSettingJSON('deleted_custom_distractions', archive);
+      saveArchivedDistractions([...archive, { key: deleted.key, label: deleted.label }]);
     }
   }
 
   function handleRestoreDefaults() {
     setHiddenBuiltins([]);
     saveSettingJSON('hidden_distractions', []);
+    syncDistractionSettings();
   }
 
   function handleReactivate(key: string) {
@@ -313,14 +340,13 @@ export default function LogScreen() {
     saveSettingJSON('custom_distractions', newActive);
 
     const newArchive = archive.filter((d) => d.key !== key);
-    saveSettingJSON('deleted_custom_distractions', newArchive);
+    saveArchivedDistractions(newArchive);
   }
 
   function handlePermanentDelete(key: string) {
     const archive = getSettingJSON('deleted_custom_distractions') as { key: string; label: string }[];
     const found = archive.find((d) => d.key === key);
     const newArchive = archive.filter((d) => d.key !== key);
-    saveSettingJSON('deleted_custom_distractions', newArchive);
 
     if (found) {
       rememberCustomLabel(found);
@@ -328,6 +354,82 @@ export default function LogScreen() {
       historical.push({ key: found.key, label: found.label });
       saveSettingJSON('historical_custom_labels', historical);
     }
+    saveArchivedDistractions(newArchive);
+  }
+
+  function openDistractionNameEditor(distraction: { key: string; label: string }) {
+    setDistractionNameInput(distraction.label.slice(0, CUSTOM_DISTRACTION_MAX_LENGTH));
+    setEditDistraction(distraction);
+  }
+
+  function closeDistractionNameEditor() {
+    setEditDistraction(null);
+    setDistractionNameInput('');
+  }
+
+  function handleSaveDistractionName() {
+    if (!editDistraction) return;
+
+    const label = distractionNameInput.trim().slice(0, CUSTOM_DISTRACTION_MAX_LENGTH);
+    if (!label) return;
+
+    const renamedDistractions = customDistractions.map((distraction) =>
+      distraction.key === editDistraction.key ? { ...distraction, label } : distraction
+    );
+    setCustomDistractions(renamedDistractions);
+    saveSettingJSON('custom_distractions', renamedDistractions);
+
+    // Keep historical labels in sync so existing logs and reminders use the new name.
+    for (const settingKey of ['custom_distraction_labels', 'historical_custom_labels']) {
+      const labels = getSettingJSON(settingKey) as { key: string; label: string }[];
+      if (labels.some((distraction) => distraction.key === editDistraction.key)) {
+        saveSettingJSON(
+          settingKey,
+          labels.map((distraction) =>
+            distraction.key === editDistraction.key ? { ...distraction, label } : distraction
+          )
+        );
+      }
+    }
+
+    // The generated reminder may mention the old label. Force the next use of
+    // this same distraction key to generate content for the renamed label.
+    clearCachedReminder(editDistraction.key).catch((error) =>
+      console.warn('[reminder] Failed to clear renamed distraction cache:', error)
+    );
+    syncDistractionSettings();
+
+    closeDistractionNameEditor();
+  }
+
+  function handleDeleteSalahLog() {
+    if (!relogSalah) return;
+
+    const salahToDelete = relogSalah;
+    const logDate = getLogDateForDay(activeDay);
+
+    // The local delete runs synchronously inside this helper, while cloud
+    // deletion is queued durably and retried by the normal sync flow.
+    deleteLogEverywhere(salahToDelete, logDate, userId ?? undefined).catch((error) =>
+      console.warn('[sync] salah_log deletion queued for retry:', error)
+    );
+
+    const nextLogs = { ...logsByDay[activeDay] };
+    delete nextLogs[salahToDelete];
+    setLogsByDay((current) => ({ ...current, [activeDay]: nextLogs }));
+    setSelectedSalah(salahToDelete);
+    setFocusRating(0);
+    setSelectedDistractions([]);
+    setSaved(false);
+    setIsRelogging(false);
+    setEditMode(false);
+    setShowOtherInput(false);
+    setOtherInputText('');
+    setRelogSalah(null);
+
+    writeWidgetData(isPremium).catch((error) =>
+      console.warn('[widget] writeWidgetData failed after log deletion:', error)
+    );
   }
 
   const canSave = focusRating > 0 && (
@@ -397,7 +499,7 @@ export default function LogScreen() {
                 .set({ classifiedCategory: category })
                 .where(eq(salahLogs.loggedAt, now.getTime()))
                 .run();
-              queueClassificationUpdate(cloudLog, category).catch((error) =>
+              queueClassificationUpdate(cloudLog, category, userId ?? undefined).catch((error) =>
                 console.warn('[sync] salah_logs classification update failed:', error)
               );
             }
@@ -669,8 +771,17 @@ export default function LogScreen() {
                   return (
                     <View key={key} className="py-2 px-3 rounded-xl bg-sand-200 flex-row items-center">
                       <Text className="text-ink-700 text-sm font-medium">{label}</Text>
-                      <Pressable onPress={() => handleDeleteCustom(key)} hitSlop={8} className="ml-1.5">
-                        <XMarkIcon size={12} color="#F87171" />
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Edit ${label}`}
+                        onPress={() => openDistractionNameEditor({ key, label })}
+                        hitSlop={8}
+                        className="ml-2"
+                      >
+                        <PencilIcon size={14} color="#EAB308" />
+                      </Pressable>
+                      <Pressable onPress={() => handleDeleteCustom(key)} hitSlop={8} className="ml-1">
+                        <XMarkIcon size={12} color="#9B9189" />
                       </Pressable>
                     </View>
                   );
@@ -719,14 +830,13 @@ export default function LogScreen() {
                         key={key}
                         className="py-2 px-3 rounded-xl bg-sand-100 border border-dashed border-sand-300 flex-row items-center"
                       >
-                        <Pressable onPress={() => handleReactivate(key)} className="flex-row items-center">
+                        <Pressable onPress={() => handleReactivate(key)}>
                           <Text className="text-ink-400 text-sm">{label}</Text>
-                          <ArrowUturnUpIcon size={12} color="#5A7A5A" style={{ marginLeft: 6 }} />
                         </Pressable>
                         <Pressable
                           onPress={() => setDeleteArchived({ key, label })}
                           hitSlop={8}
-                          className="ml-1"
+                          className="ml-2"
                         >
                           <XMarkIcon size={12} color="#F87171" />
                         </Pressable>
@@ -745,7 +855,7 @@ export default function LogScreen() {
                   value={otherInputText}
                   onChangeText={(t) => setOtherInputText(t.slice(0, CUSTOM_DISTRACTION_MAX_LENGTH))}
                   maxLength={CUSTOM_DISTRACTION_MAX_LENGTH}
-                  placeholder="e.g. Hunger, Noise…"
+                  placeholder="e.g. Hunger, Noise... (clear and simple)"
                   placeholderTextColor="#9B9189"
                   autoFocus
                   className="text-ink-700 text-sm"
@@ -817,13 +927,91 @@ export default function LogScreen() {
         </ScrollView>
       </SafeAreaView>
 
-      {/* ── Relog Confirmation Modal ──────────────────────────────────── */}
+      {/* Edit custom distraction name */}
+      <Modal
+        visible={editDistraction !== null}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        navigationBarTranslucent
+        onRequestClose={closeDistractionNameEditor}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          className="flex-1"
+        >
+          <Pressable
+            accessibilityRole="none"
+            className="flex-1 bg-black/40 items-center justify-center px-6"
+            onPress={closeDistractionNameEditor}
+          >
+            <Pressable
+              accessibilityViewIsModal
+              className="bg-white border border-sand-200 rounded-3xl px-6 pt-6 pb-5 w-full max-w-sm"
+              style={{
+                shadowColor: '#1A1917',
+                shadowOffset: { width: 0, height: 12 },
+                shadowOpacity: 0.16,
+                shadowRadius: 24,
+                elevation: 12,
+              }}
+              onPress={(event) => event.stopPropagation()}
+            >
+              <Text className="text-ink-900 text-lg font-semibold text-center mb-6">
+                Edit distraction name
+              </Text>
+
+              <Text className="text-ink-500 text-xs mb-2">Name this distraction:</Text>
+              <TextInput
+                value={distractionNameInput}
+                onChangeText={(text) =>
+                  setDistractionNameInput(text.slice(0, CUSTOM_DISTRACTION_MAX_LENGTH))
+                }
+                maxLength={CUSTOM_DISTRACTION_MAX_LENGTH}
+                placeholder="e.g. Hunger, Noise... (clear and simple)"
+                placeholderTextColor="#9B9189"
+                autoFocus
+                selectTextOnFocus
+                returnKeyType="done"
+                className="text-ink-700 text-sm"
+                onSubmitEditing={handleSaveDistractionName}
+              />
+              <Text className="text-ink-300 text-xs mt-1 text-right">
+                {distractionNameInput.length}/{CUSTOM_DISTRACTION_MAX_LENGTH}
+              </Text>
+
+              <View className="flex-row gap-x-3 mt-6">
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={closeDistractionNameEditor}
+                  className="flex-1 min-h-12 px-3 py-3 rounded-2xl bg-sand-200 active:bg-sand-300 items-center justify-center"
+                >
+                  <Text className="text-ink-700 text-sm font-semibold">Cancel</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: !distractionNameInput.trim() }}
+                  onPress={handleSaveDistractionName}
+                  disabled={!distractionNameInput.trim()}
+                  className={`flex-1 min-h-12 px-3 py-3 rounded-2xl bg-yellow-500 active:bg-yellow-600 items-center justify-center ${
+                    !distractionNameInput.trim() ? 'opacity-40' : ''
+                  }`}
+                >
+                  <Text className="text-ink-900 text-sm font-semibold">Save name</Text>
+                </Pressable>
+              </View>
+            </Pressable>
+          </Pressable>
+        </KeyboardAvoidingView>
+      </Modal>
+
       <AppDialog
         visible={relogSalah !== null}
         title="Relog Salah?"
         message={relogSalah
           ? `${SALAH_DISPLAY_NAMES[relogSalah]} has already been logged ${activeDay}. Would you like to relog it?`
           : ''}
+        actionLayout="horizontal"
         onDismiss={() => setRelogSalah(null)}
         actions={[
           { label: 'No', tone: 'secondary', onPress: () => setRelogSalah(null) },
@@ -836,6 +1024,11 @@ export default function LogScreen() {
               }
               setRelogSalah(null);
             },
+          },
+          {
+            label: 'Delete log',
+            tone: 'destructive',
+            onPress: handleDeleteSalahLog,
           },
         ]}
       />

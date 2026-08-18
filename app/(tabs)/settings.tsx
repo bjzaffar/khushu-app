@@ -5,7 +5,7 @@ import { ArrowRightIcon } from 'react-native-heroicons/outline';
 import { CheckIcon } from 'react-native-heroicons/solid';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useScrollToTop } from '@react-navigation/native';
 import Animated, {
   cancelAnimation,
@@ -17,11 +17,9 @@ import Animated, {
 } from 'react-native-reanimated';
 import Svg, { G, Rect } from 'react-native-svg';
 import { eq } from 'drizzle-orm';
-import { salahLogs } from '@/db/schema';
 import * as Location from 'expo-location';
 import { selectIsPremium, useAppStore } from '@/store/appStore';
 import { getDeviceLocation } from '@/lib/location/deviceLocation';
-import { router } from 'expo-router';
 import { supabase } from '@/lib/supabase/client';
 import { clearLogsEverywhere } from '@/lib/supabase/sync';
 import { writeWidgetData } from '@/lib/widget/widgetData';
@@ -37,6 +35,7 @@ import { CALCULATION_METHODS, type CalculationMethodKey, type AsrMadhab } from '
 import { WheelPicker } from '@/components/ui/WheelPicker';
 import { clearRevenueCatUser, openRevenueCatCustomerCenter } from '@/lib/revenuecat/service';
 import { resetToAppRoot } from '@/lib/navigation';
+import { clearNativeGoogleSignInSession } from '@/lib/auth/googleSignIn';
 
 const MINUTE_VALUES = Array.from({ length: 60 }, (_, i) => i + 1); // 1–60
 const AnimatedGroup = Animated.createAnimatedComponent(G);
@@ -424,9 +423,22 @@ export default function SettingsScreen() {
 
   async function confirmSignOut() {
     setShowSignOutModal(false);
-    await clearRevenueCatUser();
-    await supabase.auth.signOut();
-    resetToAppRoot();
+    try {
+      await clearNativeGoogleSignInSession().catch((error) =>
+        console.warn('[auth] native Google sign-out cleanup failed:', error)
+      );
+      await clearRevenueCatUser();
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      resetToAppRoot();
+    } catch (error) {
+      console.error('[auth] sign-out failed:', error);
+      setFeedbackDialog({
+        title: 'Could not sign out',
+        message: 'Please check your connection and try again.',
+        tone: 'warning',
+      });
+    }
   }
 
   async function confirmDeleteAccount() {
@@ -435,8 +447,6 @@ export default function SettingsScreen() {
     try {
       const { error: deleteError } = await supabase.rpc('delete_user');
       if (deleteError) throw deleteError;
-      await clearRevenueCatUser();
-      await supabase.auth.signOut();
     } catch (error) {
       console.error('[auth] account deletion failed:', error);
       setFeedbackDialog({
@@ -444,7 +454,18 @@ export default function SettingsScreen() {
         message: 'Your account has not been deleted. Please check your connection and try again.',
         tone: 'warning',
       });
+      return;
     }
+
+    await clearNativeGoogleSignInSession().catch((error) =>
+      console.warn('[auth] native Google deletion cleanup failed:', error)
+    );
+    await clearRevenueCatUser().catch((error) =>
+      console.warn('[revenuecat] deletion cleanup failed:', error)
+    );
+    const { error: signOutError } = await supabase.auth.signOut();
+    if (signOutError) console.warn('[auth] post-deletion local sign-out failed:', signOutError);
+    resetToAppRoot();
   }
 
   function handleClearLogs() {

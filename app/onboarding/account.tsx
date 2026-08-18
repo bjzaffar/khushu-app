@@ -1,6 +1,6 @@
 import {
   View, Pressable, ScrollView,
-  ActivityIndicator, KeyboardAvoidingView, Platform, Linking,
+  ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Text, TextInput } from '@/components/ui/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -15,6 +15,11 @@ import { syncLogsFromCloud } from '@/lib/supabase/sync';
 import * as SecureStore from 'expo-secure-store';
 import { clearPendingAuthReturn, setPendingAuthReturn } from '@/lib/authReturn';
 import { resetToAppRoot } from '@/lib/navigation';
+import {
+  getGoogleSignInErrorMessage,
+  isGoogleSignInCancellation,
+} from '@/lib/auth/googleSignInConfig';
+import { startNativeGoogleSignIn } from '@/lib/auth/googleSignIn';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -154,27 +159,38 @@ export default function AccountScreen() {
     }
   }
 
-  // ─── OAuth handlers ──────────────────────────────────────────────────────────
+  // ─── Native Google handler ───────────────────────────────────────────────────
 
   async function handleGoogle() {
     setStatus('loading');
     setErrorMsg('');
     try {
       if (returnTo === 'paywall') await setPendingAuthReturn('paywall');
-      const { data, error } = await supabase.auth.signInWithOAuth({
+
+      const googleResult = await startNativeGoogleSignIn();
+      if (googleResult.status === 'cancelled') {
+        await clearPendingAuthReturn();
+        setStatus('idle');
+        return;
+      }
+
+      const { data, error } = await supabase.auth.signInWithIdToken({
         provider: 'google',
-        options: {
-          redirectTo: 'khushuai://auth/callback',
-          skipBrowserRedirect: true,
-        },
+        token: googleResult.idToken,
+        nonce: googleResult.nonce,
       });
       if (error) throw error;
-      if (!data.url) throw new Error('Google sign-in could not be started. Please try again.');
-      await Linking.openURL(data.url);
-      // The browser redirects back to auth/callback, where the session is completed.
-    } catch {
+      const userId = data.user?.id ?? data.session?.user?.id;
+      if (!userId) throw new Error('Supabase did not create a session after Google sign-in.');
+
+      await onAuthSuccess(userId);
+    } catch (error) {
       await clearPendingAuthReturn();
-      setErrorMsg('Could not open Google sign-in. Please try again.');
+      if (isGoogleSignInCancellation(error)) {
+        setStatus('idle');
+        return;
+      }
+      setErrorMsg(getGoogleSignInErrorMessage(error));
       setStatus('error');
     }
   }
@@ -461,7 +477,7 @@ export default function AccountScreen() {
                 <View className="flex-1 h-px bg-sand-200" />
               </View>
 
-              {/* ── OAuth buttons ────────────────────────────────────────── */}
+              {/* ── Native provider buttons ───────────────────────────────── */}
               <View className="gap-y-3">
                 <Pressable
                   onPress={handleGoogle}

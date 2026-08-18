@@ -58,7 +58,6 @@
         }
       ],
       "expo-secure-store",
-      "./plugins/with-notification-large-icon",
       "./plugins/with-salah-heatmap-widget"
     ],
     "experiments": {

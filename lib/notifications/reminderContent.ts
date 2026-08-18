@@ -35,6 +35,14 @@ export function getCachedReminder(customKey: string): GeneratedReminder | null {
   } catch { return null; }
 }
 
+export async function clearCachedReminder(customKey: string): Promise<void> {
+  const key = cacheKey(customKey);
+  // Invalidate synchronously so an immediate reactivation/log cannot reuse text
+  // generated for the old label while the secure-store deletion is pending.
+  SecureStore.setItem(key, '');
+  await SecureStore.deleteItemAsync(key);
+}
+
 function setCachedReminder(customKey: string, reminder: GeneratedReminder): void {
   SecureStore.setItem(cacheKey(customKey), JSON.stringify({
     ...reminder, timestamp: Date.now(),

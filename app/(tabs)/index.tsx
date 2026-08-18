@@ -8,16 +8,18 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useScrollToTop } from '@react-navigation/native';
 import { useAppStore } from '@/store/appStore';
 import {
+  DISTRACTION_LABELS,
   SALAH_DISPLAY_NAMES,
   SALAH_NAMES,
+  type DistractionKey,
   type SalahName,
   type PrayerTimes,
 } from '@/types';
 import { formatPrayerTime, getCurrentSalahWindow } from '@/lib/prayer/prayerTimes';
 import { toLocalDateKey } from '@/lib/date';
 import { db } from '@/db/database';
-import { salahLogs } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { salahLogs, settings } from '@/db/schema';
+import { eq, inArray } from 'drizzle-orm';
 import {
   requestNotificationPermissions,
   schedulePostSalahPrompts,
@@ -26,6 +28,49 @@ import {
 } from '@/lib/notifications/notificationService';
 
 type SalahStatus = 'logged' | 'current' | 'upcoming' | 'past';
+
+type HomeSalahLog = {
+  rating: number;
+  distraction?: string;
+};
+
+const CUSTOM_DISTRACTION_SETTING_KEYS = [
+  'custom_distraction_labels',
+  'historical_custom_labels',
+  'deleted_custom_distractions',
+  'custom_distractions',
+];
+
+function getCustomDistractionLabels(rows: { key: string; value: string }[]) {
+  const rowsByKey = new Map(rows.map((row) => [row.key, row.value]));
+  const labels: Record<string, string> = {};
+
+  for (const settingKey of CUSTOM_DISTRACTION_SETTING_KEYS) {
+    const value = rowsByKey.get(settingKey);
+    if (!value) continue;
+
+    try {
+      const distractions = JSON.parse(value) as { key: string; label: string }[];
+      for (const distraction of distractions) labels[distraction.key] = distraction.label;
+    } catch {}
+  }
+
+  return labels;
+}
+
+function getDistractionTitle(distractions: string, customLabels: Record<string, string>) {
+  const labels = distractions
+    .split(',')
+    .map((key) => key.trim())
+    .filter(Boolean)
+    .map((key) =>
+      DISTRACTION_LABELS[key as DistractionKey]
+      ?? customLabels[key]
+      ?? (key === 'other' ? 'Other' : 'Deleted distraction')
+    );
+
+  return labels.length > 0 ? labels.join(', ') : undefined;
+}
 
 function getSalahStatus(
   name: SalahName,
@@ -48,8 +93,8 @@ export default function HomeScreen() {
     postSalahPromptEnabled,
     startSalahMode,
   } = useAppStore();
-  // salahName → focusRating for logs today
-  const [todaysLogs, setTodaysLogs] = useState<Record<string, number>>({});
+  // salahName → homepage details for logs today
+  const [todaysLogs, setTodaysLogs] = useState<Record<string, HomeSalahLog>>({});
   const [notificationsGranted, setNotificationsGranted] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const hasRequestedNotifications = useRef(false);
@@ -98,9 +143,17 @@ export default function HomeScreen() {
           .select()
           .from(salahLogs)
           .where(eq(salahLogs.logDate, today));
-        const map: Record<string, number> = {};
+        const customLabelRows = await db
+          .select({ key: settings.key, value: settings.value })
+          .from(settings)
+          .where(inArray(settings.key, CUSTOM_DISTRACTION_SETTING_KEYS));
+        const customLabels = getCustomDistractionLabels(customLabelRows);
+        const map: Record<string, HomeSalahLog> = {};
         for (const log of logs) {
-          map[log.salahName] = log.focusRating;
+          map[log.salahName] = {
+            rating: log.focusRating,
+            distraction: getDistractionTitle(log.distractions, customLabels),
+          };
         }
         setTodaysLogs(map);
       }
@@ -137,14 +190,15 @@ export default function HomeScreen() {
           <View className="gap-y-3">
             {SALAH_NAMES.map((name) => {
               const status = getSalahStatus(name, todaysPrayerTimes, loggedSet, now);
-              const rating = todaysLogs[name];
+              const log = todaysLogs[name];
               return (
                 <SalahCard
                   key={name}
                   name={name}
                   time={formatPrayerTime(todaysPrayerTimes[name])}
                   status={status}
-                  rating={rating}
+                  rating={log?.rating}
+                  distraction={log?.distraction}
                   onPress={() => handleSalahPress(name, status)}
                 />
               );
@@ -167,12 +221,14 @@ function SalahCard({
   time,
   status,
   rating,
+  distraction,
   onPress,
 }: {
   name: SalahName;
   time: string;
   status: SalahStatus;
   rating?: number;
+  distraction?: string;
   onPress: () => void;
 }) {
   const isInteractive = status !== 'logged';
@@ -218,12 +274,23 @@ function SalahCard({
       <View className="items-end gap-y-1">
         <Text className="text-ink-300 text-sm">{time}</Text>
         {status === 'logged' && rating !== undefined && (
-          <View className="flex-row gap-x-0.5">
-            {[1, 2, 3, 4, 5].map((n) => (
-              n <= rating
-                ? <StarSolidIcon key={n} size={12} color="#5A7A5A" />
-                : <StarIcon key={n} size={12} color="#DDD0BA" />
-            ))}
+          <View className="flex-row items-center justify-end gap-x-2">
+            {distraction && (
+              <Text
+                className="text-sage-600 text-xs font-medium"
+                numberOfLines={1}
+                style={{ maxWidth: 140 }}
+              >
+                {distraction}
+              </Text>
+            )}
+            <View className="flex-row gap-x-0.5">
+              {[1, 2, 3, 4, 5].map((n) => (
+                n <= rating
+                  ? <StarSolidIcon key={n} size={12} color="#5A7A5A" />
+                  : <StarIcon key={n} size={12} color="#DDD0BA" />
+              ))}
+            </View>
           </View>
         )}
       </View>
