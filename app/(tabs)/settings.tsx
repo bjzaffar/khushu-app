@@ -27,6 +27,7 @@ import { db } from '@/db/database';
 import { settings } from '@/db/schema';
 import { calculatePrayerTimes } from '@/lib/prayer/prayerTimes';
 import {
+  PRE_SALAH_REMINDERS_DISABLED,
   schedulePreSalahReminders,
   schedulePostSalahPrompts,
   cancelPostSalahReminders,
@@ -37,7 +38,11 @@ import { clearRevenueCatUser, openRevenueCatCustomerCenter } from '@/lib/revenue
 import { resetToAppRoot } from '@/lib/navigation';
 import { clearNativeGoogleSignInSession } from '@/lib/auth/googleSignIn';
 
-const MINUTE_VALUES = Array.from({ length: 60 }, (_, i) => i + 1); // 1–60
+const MINUTE_VALUES = [
+  PRE_SALAH_REMINDERS_DISABLED,
+  0,
+  ...Array.from({ length: 60 }, (_, i) => i + 1),
+];
 const AnimatedGroup = Animated.createAnimatedComponent(G);
 const STAR_GLOW_LAYERS = [
   { strokeWidth: 7, strokeOpacity: 0.06 },
@@ -531,7 +536,10 @@ export default function SettingsScreen() {
               values={MINUTE_VALUES}
               selectedValue={reminderMinutesBefore}
               onValueChange={handleMinutesChange}
-              formatValue={(v) => `${v} min`}
+              formatValue={(value) => {
+                if (value === PRE_SALAH_REMINDERS_DISABLED) return "Don't remind me";
+                return `${value} min`;
+              }}
               onTouchStart={() => setWheelActive(true)}
               onTouchEnd={() => setWheelActive(false)}
             />

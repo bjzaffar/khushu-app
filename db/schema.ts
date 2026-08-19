@@ -10,7 +10,7 @@ export const salahLogs = sqliteTable('salah_logs', {
   focusRating: integer('focus_rating').notNull(),
   // Comma-separated distraction keys e.g. "work,financial,tired"
   distractions: text('distractions').notNull().default(''),
-  // Optional free-text reflection (max 150 chars enforced in UI)
+  // Optional user note (max 200 chars enforced in UI)
   reflectionText: text('reflection_text').default(''),
   // Unix timestamp (ms) of when the log was created
   loggedAt: integer('logged_at').notNull(),

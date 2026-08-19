@@ -220,6 +220,38 @@ export async function deleteLogEverywhere(
   await flushLogSyncQueue(userId);
 }
 
+/** Update one log's note locally, then durably mirror the complete current row to Supabase. */
+export async function updateLogNoteEverywhere(
+  salahName: string,
+  logDate: string,
+  note: string,
+  overrideUserId?: string,
+): Promise<void> {
+  const existingLog = db.select()
+    .from(salahLogs)
+    .where(and(eq(salahLogs.salahName, salahName), eq(salahLogs.logDate, logDate)))
+    .get();
+  if (!existingLog) return;
+
+  const normalizedNote = note.trim().slice(0, 200);
+  db.update(salahLogs)
+    .set({ reflectionText: normalizedNote })
+    .where(eq(salahLogs.id, existingLog.id))
+    .run();
+
+  await queueLogUpsert({
+    salahName: existingLog.salahName,
+    focusRating: existingLog.focusRating,
+    distractions: existingLog.distractions,
+    reflectionText: normalizedNote,
+    loggedAt: existingLog.loggedAt,
+    logDate: existingLog.logDate,
+    fromSalahMode: existingLog.fromSalahMode,
+    reminderType: existingLog.reminderType,
+    classifiedCategory: existingLog.classifiedCategory,
+  }, overrideUserId);
+}
+
 /** Clear local history and queue deletion of the signed-in user's cloud history. */
 export async function clearLogsEverywhere(): Promise<void> {
   db.delete(salahLogs).run();
@@ -394,7 +426,7 @@ export async function queueClassificationUpdate(
 ): Promise<void> {
   // Classification is asynchronous. Do not let a late result recreate a log
   // the user deleted while classification was still running.
-  const localLog = db.select({ id: salahLogs.id })
+  const localLog = db.select()
     .from(salahLogs)
     .where(and(
       eq(salahLogs.salahName, log.salahName),
@@ -404,5 +436,15 @@ export async function queueClassificationUpdate(
     .get();
   if (!localLog) return;
 
-  await queueLogUpsert({ ...log, classifiedCategory }, overrideUserId);
+  await queueLogUpsert({
+    salahName: localLog.salahName,
+    focusRating: localLog.focusRating,
+    distractions: localLog.distractions,
+    reflectionText: localLog.reflectionText,
+    loggedAt: localLog.loggedAt,
+    logDate: localLog.logDate,
+    fromSalahMode: localLog.fromSalahMode,
+    reminderType: localLog.reminderType,
+    classifiedCategory,
+  }, overrideUserId);
 }

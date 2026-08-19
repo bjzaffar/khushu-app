@@ -161,7 +161,15 @@ function computeSalahInsights(
 
 // ── KhushuChart ───────────────────────────────────────────────────────────────
 
-function KhushuChart({ points, timeframe }: { points: LogChartPoint[]; timeframe: ChartTimeframe }) {
+function KhushuChart({
+  points,
+  timeframe,
+  isAllSalah,
+}: {
+  points: LogChartPoint[];
+  timeframe: ChartTimeframe;
+  isAllSalah: boolean;
+}) {
   const [cw, setCw] = useState(0);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const DOT = 4;
@@ -172,7 +180,7 @@ function KhushuChart({ points, timeframe }: { points: LogChartPoint[]; timeframe
 
   useEffect(() => {
     setSelectedId(null);
-  }, [points, timeframe]);
+  }, [isAllSalah, points, timeframe]);
 
   const getX = (i: number) =>
     n <= 1
@@ -269,11 +277,14 @@ function KhushuChart({ points, timeframe }: { points: LogChartPoint[]; timeframe
             {points.map((point, i) => {
               const selected = point.id === selectedId;
               const dateLabel = formatChartPointDate(point.logDate, timeframe);
+              const ratingLabel = isAllSalah
+                ? `average khushu rating ${point.avg.toFixed(1)} out of 5 from ${point.logCount} ${point.logCount === 1 ? 'prayer' : 'prayers'}`
+                : `khushu rating ${point.avg.toFixed(0)} out of 5`;
               return (
                 <Pressable
                   key={point.id}
                   accessibilityRole="button"
-                  accessibilityLabel={`${dateLabel}, average khushu rating ${point.avg.toFixed(1)} out of 5 from ${point.logCount} ${point.logCount === 1 ? 'prayer' : 'prayers'}`}
+                  accessibilityLabel={`${dateLabel}, ${ratingLabel}`}
                   accessibilityState={{ selected }}
                   onPress={() => setSelectedId(point.id)}
                   hitSlop={4}
@@ -324,7 +335,9 @@ function KhushuChart({ points, timeframe }: { points: LogChartPoint[]; timeframe
                   textAlign: 'center',
                 }}
               >
-                {formatChartPointDate(selectedPoint.logDate, timeframe)} • {selectedPoint.avg.toFixed(1)} avg
+                {formatChartPointDate(selectedPoint.logDate, timeframe)} • {isAllSalah
+                  ? `${selectedPoint.avg.toFixed(1)} avg`
+                  : selectedPoint.avg.toFixed(0)}
               </Text>
             )}
           </View>
@@ -783,7 +796,11 @@ export default function InsightsScreen() {
                     onLockedPress={() => router.push('/paywall')}
                   />
                 </View>
-                <KhushuChart points={chartPoints} timeframe={timeframe} />
+                <KhushuChart
+                  points={chartPoints}
+                  timeframe={timeframe}
+                  isAllSalah={salahFilter === 'all'}
+                />
               </View>
             </View>
 

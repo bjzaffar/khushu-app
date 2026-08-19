@@ -9,6 +9,8 @@ import { salahLogs, settings } from '@/db/schema';
 import { toLocalDateKey } from '@/lib/date';
 import { eq } from 'drizzle-orm';
 
+export const PRE_SALAH_REMINDERS_DISABLED = -1;
+
 // Show notifications when app is in the foreground
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -47,6 +49,14 @@ export async function schedulePreSalahReminders(
   minutesBefore: number
 ): Promise<void> {
   await cancelPreSalahReminders();
+
+  if (minutesBefore === PRE_SALAH_REMINDERS_DISABLED) {
+    for (const salah of SALAH_NAMES) {
+      db.delete(settings).where(eq(settings.key, `pending_reminder_type_${salah}`)).run();
+    }
+    return;
+  }
+
   const now = new Date();
 
   for (const salah of SALAH_NAMES) {
@@ -65,7 +75,9 @@ export async function schedulePreSalahReminders(
     await Notifications.scheduleNotificationAsync({
       identifier: `pre_salah_${salah}`,
       content: {
-        title: `${SALAH_DISPLAY_NAMES[salah]} in ${minutesBefore} min`,
+        title: minutesBefore === 0
+          ? `${SALAH_DISPLAY_NAMES[salah]} starts now`
+          : `${SALAH_DISPLAY_NAMES[salah]} in ${minutesBefore} min`,
         body,
         data: { type: 'pre_salah', salah },
         sound: false,

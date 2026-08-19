@@ -23,6 +23,10 @@ interface AppState {
   todaysPrayerTimes: PrayerTimes | null;
   setTodaysPrayerTimes: (times: PrayerTimes) => void;
 
+  // Incremented when the already-focused Home tab is pressed again.
+  homeTabReselectionVersion: number;
+  requestHomeTabReselection: () => void;
+
   // ── Salah Mode ───────────────────────────────────────────────────────────────
   salahModeActive: boolean;
   activeSalah: SalahName | null;
@@ -70,6 +74,10 @@ export const useAppStore = create<AppState>((set) => ({
   setLocation: (loc) => set({ location: loc }),
   todaysPrayerTimes: null,
   setTodaysPrayerTimes: (times) => set({ todaysPrayerTimes: times }),
+  homeTabReselectionVersion: 0,
+  requestHomeTabReselection: () => set((state) => ({
+    homeTabReselectionVersion: state.homeTabReselectionVersion + 1,
+  })),
 
   // Salah Mode
   salahModeActive: false,

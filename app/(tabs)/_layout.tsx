@@ -2,6 +2,7 @@ import { Tabs } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowTrendingUpIcon, Cog6ToothIcon, HomeIcon, PencilSquareIcon } from 'react-native-heroicons/outline';
 import { ArrowTrendingUpIcon as ArrowTrendingUpSolidIcon, Cog6ToothIcon as Cog6ToothSolidIcon, HomeIcon as HomeSolidIcon, PencilSquareIcon as PencilSquareSolidIcon } from 'react-native-heroicons/solid';
+import { useAppStore } from '@/store/appStore';
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
@@ -28,6 +29,13 @@ export default function TabLayout() {
     >
       <Tabs.Screen
         name="index"
+        listeners={({ navigation }) => ({
+          tabPress: () => {
+            if (navigation.isFocused()) {
+              useAppStore.getState().requestHomeTabReselection();
+            }
+          },
+        })}
         options={{
           title: 'Home',
           tabBarIcon: ({ color, focused }) => focused ? <HomeSolidIcon size={20} color={color} /> : <HomeIcon size={20} color={color} />,

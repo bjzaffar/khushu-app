@@ -10,8 +10,20 @@ import {
 } from 'react-native';
 import { Text, TextInput } from '@/components/ui/Typography';
 import { AppDialog } from '@/components/ui/AppDialog';
-import { PencilIcon, StarIcon, XMarkIcon } from 'react-native-heroicons/outline';
-import { CheckCircleIcon as CheckCircleSolidIcon, StarIcon as StarSolidIcon } from 'react-native-heroicons/solid';
+import {
+  BookmarkIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  PencilIcon,
+  StarIcon,
+  TrashIcon,
+  XMarkIcon,
+} from 'react-native-heroicons/outline';
+import {
+  BookmarkIcon as BookmarkSolidIcon,
+  CheckCircleIcon as CheckCircleSolidIcon,
+  StarIcon as StarSolidIcon,
+} from 'react-native-heroicons/solid';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
@@ -49,6 +61,7 @@ const BUILTIN_DISTRACTION_KEYS = Object.keys(DISTRACTION_LABELS).filter(
   (k) => k !== 'other'
 ) as DistractionKey[];
 const CUSTOM_DISTRACTION_MAX_LENGTH = 25;
+const NOTE_MAX_LENGTH = 200;
 
 const RATING_LABELS: Record<number, string> = {
   1: 'Heavily distracted',
@@ -140,6 +153,9 @@ export default function LogScreen() {
   const [editMode, setEditMode] = useState(false);
   const [showOtherInput, setShowOtherInput] = useState(false);
   const [otherInputText, setOtherInputText] = useState('');
+  const [note, setNote] = useState('');
+  const [showNoteInput, setShowNoteInput] = useState(false);
+  const [noteInputText, setNoteInputText] = useState('');
   const starsContainerRef = useRef<View>(null);
   const starsContainerXRef = useRef(0);
   const starsContainerWidthRef = useRef(0);
@@ -150,6 +166,21 @@ export default function LogScreen() {
     const relativeX = pageX - starsContainerXRef.current;
     const rating = Math.min(5, Math.max(1, Math.ceil(relativeX / (width / 5))));
     setFocusRating(rating);
+  }, []);
+
+  const resetReflectionInputs = useCallback(() => {
+    setFocusRating(0);
+    setIsRatingGestureActive(false);
+    setSelectedDistractions([]);
+    setEditMode(false);
+    setShowOtherInput(false);
+    setOtherInputText('');
+    setNote('');
+    setShowNoteInput(false);
+    setNoteInputText('');
+    setEditDistraction(null);
+    setDistractionNameInput('');
+    setDeleteArchived(null);
   }, []);
 
   // Load custom/hidden from SQLite once on mount
@@ -181,14 +212,11 @@ export default function LogScreen() {
     const logsForDay = map ?? loadLogsForDay(day).map;
     const firstUnlogged = SALAH_NAMES.find((name) => !(name in logsForDay));
     setSelectedSalah(firstUnlogged ?? resolveInitialSalah(day));
-    setFocusRating(0);
-    setSelectedDistractions([]);
+    resetReflectionInputs();
     setSaved(false);
     setIsRelogging(false);
-    setEditMode(false);
-    setShowOtherInput(false);
-    setOtherInputText('');
-  }, [loadLogsForDay, resolveInitialSalah]);
+    setRelogSalah(null);
+  }, [loadLogsForDay, resetReflectionInputs, resolveInitialSalah]);
 
   const handleDayChange = useCallback((day: LogDay) => {
     if (day === activeDay) return;
@@ -253,6 +281,9 @@ export default function LogScreen() {
         resetFormForDay('today');
         setShowOtherInput(false);
         setOtherInputText('');
+        setNote('');
+        setShowNoteInput(false);
+        setNoteInputText('');
         setIsRatingGestureActive(false);
         setRelogSalah(null);
         setDeleteArchived(null);
@@ -268,6 +299,33 @@ export default function LogScreen() {
     setSelectedDistractions((prev) =>
       prev.includes(key) ? [] : [key]
     );
+  }
+
+  function openNoteEditor() {
+    setSelectedDistractions((current) => current.filter((key) => key !== 'other'));
+    setShowOtherInput(false);
+    setOtherInputText('');
+    setNoteInputText(note);
+    setShowNoteInput(true);
+  }
+
+  function closeNoteEditor() {
+    setShowNoteInput(false);
+    setNoteInputText(note);
+  }
+
+  function handleAddNote() {
+    const normalizedNote = noteInputText.trim().slice(0, NOTE_MAX_LENGTH);
+    if (!normalizedNote) return;
+    setNote(normalizedNote);
+    setNoteInputText(normalizedNote);
+    setShowNoteInput(false);
+  }
+
+  function handleDeleteNote() {
+    setNote('');
+    setNoteInputText('');
+    setShowNoteInput(false);
   }
 
   function rememberCustomLabel(distraction: { key: string; label: string }) {
@@ -425,6 +483,9 @@ export default function LogScreen() {
     setEditMode(false);
     setShowOtherInput(false);
     setOtherInputText('');
+    setNote('');
+    setShowNoteInput(false);
+    setNoteInputText('');
     setRelogSalah(null);
 
     writeWidgetData(isPremium).catch((error) =>
@@ -432,9 +493,10 @@ export default function LogScreen() {
     );
   }
 
-  const canSave = focusRating > 0 && (
+  const hasValidReflection = focusRating > 0 && (
     focusRating === 5 || selectedDistractions.length > 0
   );
+  const canSave = hasValidReflection && !showOtherInput && !showNoteInput && !editMode;
   const activeLogs = logsByDay[activeDay];
   const allSalahsLogged = SALAH_NAMES.every((name) => name in activeLogs);
   const showAllSalahsLogged = allSalahsLogged && !isRelogging;
@@ -460,6 +522,7 @@ export default function LogScreen() {
       salahName: selectedSalah,
       focusRating,
       distractions: selectedDistractions.join(','),
+      reflectionText: note,
       loggedAt: now.getTime(),
       logDate,
       fromSalahMode: activeDay === 'today' && params.fromSalahMode === '1',
@@ -470,6 +533,7 @@ export default function LogScreen() {
       salahName: selectedSalah,
       focusRating,
       distractions: selectedDistractions.join(','),
+      reflectionText: note,
       loggedAt: now.getTime(),
       logDate,
       fromSalahMode: activeDay === 'today' && params.fromSalahMode === '1',
@@ -580,47 +644,44 @@ export default function LogScreen() {
         >
           <Text className="text-2xl font-semibold text-ink-900 mb-5">Log Salah</Text>
 
-          <View className="mb-7 items-center">
-            <Animated.View
-              className="flex-row items-center gap-x-1"
-              style={{
-                opacity: dayTransition,
-                transform: [{
-                  translateX: dayTransition.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [dayTransitionDirection * 12, 0],
-                  }),
-                }],
-              }}
-            >
+          <View className="mb-7">
+            <View className="relative w-full h-10 items-center justify-center">
+              <Animated.View
+                style={{
+                  opacity: dayTransition,
+                  transform: [{
+                    translateX: dayTransition.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [dayTransitionDirection * 12, 0],
+                    }),
+                  }],
+                }}
+              >
+                <Text className="text-lg font-semibold text-ink-900 text-center">
+                  {DAY_LABELS[displayedDay]}
+                </Text>
+              </Animated.View>
               {displayedDay === 'today' && (
                 <Pressable
                   onPress={() => transitionToDay('yesterday')}
-                  hitSlop={12}
-                  className="w-6 py-1 items-center"
+                  className="absolute left-0 top-0 w-10 h-10 rounded-full bg-white items-center justify-center"
                   accessibilityRole="button"
                   accessibilityLabel="Show yesterday"
                 >
-                  <Text className="text-2xl leading-6 text-ink-500">‹</Text>
+                  <ChevronLeftIcon size={16} color="#6F675F" />
                 </Pressable>
               )}
-              {displayedDay === 'yesterday' && <View className="w-6" />}
-              <Text className="text-lg font-semibold text-ink-900">
-                {DAY_LABELS[displayedDay]}
-              </Text>
-              {displayedDay === 'today' && <View className="w-6" />}
               {displayedDay === 'yesterday' && (
                 <Pressable
                   onPress={() => transitionToDay('today')}
-                  hitSlop={12}
-                  className="w-6 py-1 items-center"
+                  className="absolute right-0 top-0 w-10 h-10 rounded-full bg-white items-center justify-center"
                   accessibilityRole="button"
                   accessibilityLabel="Show today"
                 >
-                  <Text className="text-2xl leading-6 text-ink-500">›</Text>
+                  <ChevronRightIcon size={16} color="#6F675F" />
                 </Pressable>
               )}
-            </Animated.View>
+            </View>
           </View>
 
           {/* ── Salah Selector ─────────────────────────────────────────────── */}
@@ -638,7 +699,9 @@ export default function LogScreen() {
                     onPress={() => {
                       if (isLogged) {
                         setRelogSalah(name);
-                      } else {
+                      } else if (name !== selectedSalah) {
+                        resetReflectionInputs();
+                        setIsRelogging(false);
                         setSelectedSalah(name);
                       }
                     }}
@@ -725,7 +788,10 @@ export default function LogScreen() {
               <Pressable
                 onPress={() => {
                   setEditMode((v) => !v);
+                  setSelectedDistractions((current) => current.filter((key) => key !== 'other'));
                   setShowOtherInput(false);
+                  setOtherInputText('');
+                  closeNoteEditor();
                 }}
               >
                 <Text className="text-sage-600 text-xs font-medium">
@@ -805,6 +871,8 @@ export default function LogScreen() {
                   onPress={() => {
                     setSelectedDistractions(['other']);
                     setShowOtherInput(true);
+                    setShowNoteInput(false);
+                    setNoteInputText(note);
                   }}
                   className={`py-2 px-4 rounded-xl ${
                     selectedDistractions.includes('other') ? 'bg-sage-600' : 'bg-sand-200'
@@ -897,6 +965,103 @@ export default function LogScreen() {
               <Pressable onPress={handleRestoreDefaults} className="mt-2">
                 <Text className="text-sage-600 text-xs">Restore defaults</Text>
               </Pressable>
+            )}
+
+            <View className="flex-row items-center justify-between mt-5 mb-2">
+              <Text className="text-xs font-medium text-ink-300 uppercase tracking-widest">
+                Note
+              </Text>
+              {!note && !showNoteInput && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Add a note"
+                  disabled={editMode}
+                  onPress={openNoteEditor}
+                  hitSlop={8}
+                  className={editMode ? 'opacity-40' : ''}
+                >
+                  <BookmarkIcon size={22} color="#EAB308" />
+                </Pressable>
+              )}
+            </View>
+
+            {showNoteInput && !editMode && (
+              <View className="relative bg-white rounded-2xl border border-yellow-500 px-4 py-3">
+                <BookmarkSolidIcon
+                  size={20}
+                  color="#EAB308"
+                  style={{ position: 'absolute', right: 14, top: 12 }}
+                />
+                <Text className="text-ink-500 text-xs mb-2 pr-8">Add a note:</Text>
+                <TextInput
+                  value={noteInputText}
+                  onChangeText={(text) => setNoteInputText(text.slice(0, NOTE_MAX_LENGTH))}
+                  maxLength={NOTE_MAX_LENGTH}
+                  placeholder="e.g. Worried about maths exam tomorrow..."
+                  placeholderTextColor="#9B9189"
+                  autoFocus
+                  multiline
+                  textAlignVertical="top"
+                  className="text-ink-700 text-sm min-h-20"
+                />
+                <Text className="text-ink-300 text-xs mt-1 text-right">
+                  {noteInputText.length}/{NOTE_MAX_LENGTH}
+                </Text>
+                <View className="flex-row gap-x-2 mt-3">
+                  <Pressable
+                    onPress={closeNoteEditor}
+                    className="flex-1 py-2 rounded-xl bg-sand-100 items-center"
+                  >
+                    <Text className="text-ink-500 text-sm">Cancel</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={handleAddNote}
+                    disabled={!noteInputText.trim()}
+                    className={`flex-1 py-2 rounded-xl items-center ${
+                      noteInputText.trim() ? 'bg-yellow-500 active:bg-yellow-600' : 'bg-sand-200'
+                    }`}
+                  >
+                    <Text className={`text-sm font-medium ${
+                      noteInputText.trim() ? 'text-white' : 'text-ink-300'
+                    }`}>
+                      Add
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
+
+            {note && !showNoteInput && (
+              <View className="relative bg-white rounded-2xl border border-yellow-500 px-4 pt-4 pb-12">
+                <BookmarkSolidIcon
+                  size={20}
+                  color="#EAB308"
+                  style={{ position: 'absolute', right: 14, top: 12 }}
+                />
+                <Text className="text-ink-700 text-sm leading-relaxed pr-8">{note}</Text>
+                <View className="absolute right-3 bottom-3 flex-row items-center gap-x-3">
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Edit note"
+                    disabled={editMode}
+                    onPress={openNoteEditor}
+                    hitSlop={8}
+                    className={editMode ? 'opacity-40' : ''}
+                  >
+                    <PencilIcon size={20} color="#EAB308" />
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Delete note"
+                    disabled={editMode}
+                    onPress={handleDeleteNote}
+                    hitSlop={8}
+                    className={editMode ? 'opacity-40' : ''}
+                  >
+                    <TrashIcon size={20} color="#EF4444" />
+                  </Pressable>
+                </View>
+              </View>
             )}
           </View>
 
@@ -1019,6 +1184,7 @@ export default function LogScreen() {
             label: 'Yes',
             onPress: () => {
               if (relogSalah) {
+                resetReflectionInputs();
                 setSelectedSalah(relogSalah);
                 setIsRelogging(true);
               }
