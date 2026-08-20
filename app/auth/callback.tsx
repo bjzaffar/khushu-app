@@ -9,6 +9,7 @@ import { consumePendingUrl } from '@/lib/deeplink';
 import { useAppStore } from '@/store/appStore';
 import { consumePendingAuthReturn } from '@/lib/authReturn';
 import { resetToAppRoot } from '@/lib/navigation';
+import { useThemeColors } from '@/lib/theme/colors';
 
 function parseParams(str: string): Record<string, string> {
   const params: Record<string, string> = {};
@@ -68,6 +69,7 @@ async function processUrl(rawUrl: string): Promise<{ action: 'recovery' | 'other
 }
 
 export default function AuthCallbackScreen() {
+  const theme = useThemeColors();
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState('Starting...');
   const processed = useRef(false);
@@ -137,7 +139,10 @@ export default function AuthCallbackScreen() {
           useAppStore.getState().setHasCompletedOnboarding(true);
           const returnTo = await consumePendingAuthReturn();
           if (returnTo === 'paywall') router.dismissTo('/paywall');
-          else resetToAppRoot();
+          else {
+            useAppStore.getState().requestSignInSuccessNotice();
+            resetToAppRoot();
+          }
         }
         setStatus('Navigation sent.');
       } catch (e: unknown) {
@@ -151,11 +156,11 @@ export default function AuthCallbackScreen() {
 
   if (error) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, backgroundColor: '#FAF7F2' }}>
-        <Text style={{ fontSize: 16, fontWeight: '600', color: '#1A1917', marginBottom: 8 }}>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, backgroundColor: theme.backgroundAlt }}>
+        <Text style={{ fontSize: 16, fontWeight: '600', color: theme.text, marginBottom: 8 }}>
           Authentication failed
         </Text>
-        <Text style={{ fontSize: 14, color: '#6B6360', textAlign: 'center', marginBottom: 12 }}>
+        <Text style={{ fontSize: 14, color: theme.greyDark, textAlign: 'center', marginBottom: 12 }}>
           This password-reset link is invalid or has expired. Request a new link and try again.
         </Text>
         <Pressable
@@ -171,9 +176,9 @@ export default function AuthCallbackScreen() {
   }
 
   return (
-    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAF7F2', padding: 20 }}>
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.backgroundAlt, padding: 20 }}>
       <ActivityIndicator size="large" color="#5A7A5A" />
-      <Text style={{ marginTop: 12, color: '#6B6360', fontSize: 14 }}>Signing you in…</Text>
+      <Text style={{ marginTop: 12, color: theme.greyDark, fontSize: 14 }}>Signing you in…</Text>
       <Text style={{ marginTop: 8, color: '#999', fontSize: 11 }}>{status}</Text>
     </View>
   );

@@ -107,7 +107,7 @@ export default function OnboardingLocation() {
             {status === 'loading' ? (
               <ActivityIndicator color="white" />
             ) : (
-              <Text className="text-white font-semibold text-base">
+              <Text className="text-pure-white font-semibold text-base">
                 Allow Location Access
               </Text>
             )}

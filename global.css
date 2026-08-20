@@ -1,3 +1,43 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root {
+    --color-white: 255 255 255;
+    --color-sand-50: 250 247 242;
+    --color-sand-100: 249 245 238;
+    --color-sand-200: 239 232 216;
+    --color-sand-300: 221 208 186;
+    --color-ink-100: 200 192 180;
+    --color-ink-300: 155 145 137;
+    --color-ink-400: 125 117 109;
+    --color-ink-500: 107 99 96;
+    --color-ink-700: 61 58 55;
+    --color-ink-900: 26 25 23;
+    --color-red-50: 254 242 242;
+    --color-red-400: 248 113 113;
+    --color-red-500: 239 68 68;
+    --color-yellow-500: 234 179 8;
+    --color-yellow-600: 202 138 4;
+  }
+
+  .dark:root {
+    --color-white: 27 32 27;
+    --color-sand-50: 23 26 23;
+    --color-sand-100: 18 21 18;
+    --color-sand-200: 41 47 41;
+    --color-sand-300: 61 69 61;
+    --color-ink-100: 200 192 180;
+    --color-ink-300: 155 145 137;
+    --color-ink-400: 125 117 109;
+    --color-ink-500: 107 99 96;
+    --color-ink-700: 255 255 255;
+    --color-ink-900: 255 255 255;
+    --color-red-50: 52 29 29;
+    --color-red-400: 255 132 132;
+    --color-red-500: 224 82 82;
+    --color-yellow-500: 235 181 20;
+    --color-yellow-600: 204 145 16;
+  }
+}

@@ -1,17 +1,17 @@
 import {
-  Animated,
-  Easing,
   KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
   ScrollView,
+  TextInput as NativeTextInput,
   View,
 } from 'react-native';
 import { Text, TextInput } from '@/components/ui/Typography';
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
+  CheckCircleIcon,
   PencilIcon,
   StarIcon,
 } from 'react-native-heroicons/outline';
@@ -52,6 +52,7 @@ import {
   setupNotificationChannel,
 } from '@/lib/notifications/notificationService';
 import { updateLogNoteEverywhere } from '@/lib/supabase/sync';
+import { useThemeColors } from '@/lib/theme/colors';
 
 type SalahStatus = 'logged' | 'current' | 'upcoming' | 'past' | 'historical';
 
@@ -154,8 +155,11 @@ export default function HomeScreen() {
     asrMadhab,
     reminderMinutesBefore,
     postSalahPromptEnabled,
+    use24HourTime,
     startSalahMode,
     homeTabReselectionVersion,
+    showSignInSuccessNotice,
+    clearSignInSuccessNotice,
   } = useAppStore();
   const [selectedDate, setSelectedDate] = useState(() => localCalendarDate(new Date()));
   const [selectedLogs, setSelectedLogs] = useState<Record<string, HomeSalahLog>>({});
@@ -163,11 +167,11 @@ export default function HomeScreen() {
   const [openNote, setOpenNote] = useState<OpenNote | null>(null);
   const [isEditingNote, setIsEditingNote] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
+  const [showSignInSuccess, setShowSignInSuccess] = useState(false);
+  const noteInputRef = useRef<NativeTextInput>(null);
   const scrollRef = useRef<ScrollView>(null);
   const hasRequestedNotifications = useRef(false);
   const hasScheduledInitialReminders = useRef(false);
-  const dayTransition = useRef(new Animated.Value(1)).current;
-  const [dayTransitionDirection, setDayTransitionDirection] = useState(0);
   const lastHomeTabReselection = useRef(homeTabReselectionVersion);
 
   const now = new Date();
@@ -183,7 +187,12 @@ export default function HomeScreen() {
   // Home is the first screen after the user finishes onboarding, so ask here
   // rather than interrupting the location or account steps.
   useEffect(() => {
-    if (!isDbReady || hasRequestedNotifications.current) return;
+    if (
+      !isDbReady
+      || hasRequestedNotifications.current
+      || showSignInSuccessNotice
+      || showSignInSuccess
+    ) return;
     hasRequestedNotifications.current = true;
 
     async function requestInitialNotificationPermission() {
@@ -194,7 +203,18 @@ export default function HomeScreen() {
     requestInitialNotificationPermission().catch((error) =>
       console.warn('[notifications] initial permission request failed:', error)
     );
-  }, [isDbReady]);
+  }, [isDbReady, showSignInSuccess, showSignInSuccessNotice]);
+
+  useEffect(() => {
+    if (!showSignInSuccessNotice) return;
+
+    setShowSignInSuccess(true);
+    const timeout = setTimeout(() => {
+      setShowSignInSuccess(false);
+      clearSignInSuccessNotice();
+    }, 1000);
+    return () => clearTimeout(timeout);
+  }, [clearSignInSuccessNotice, showSignInSuccessNotice]);
 
   useEffect(() => {
     if (!notificationsGranted || !todaysPrayerTimes || hasScheduledInitialReminders.current) return;
@@ -216,19 +236,9 @@ export default function HomeScreen() {
     const nextDateKey = toLocalDateKey(normalizedDate);
     if (nextDateKey === selectedDateKey) return;
 
-    setDayTransitionDirection(nextDateKey < selectedDateKey ? -1 : 1);
-    dayTransition.stopAnimation();
-    dayTransition.setValue(0);
     setSelectedLogs(loadHomeLogs(nextDateKey));
     setSelectedDate(normalizedDate);
-
-    Animated.timing(dayTransition, {
-      toValue: 1,
-      duration: 360,
-      easing: Easing.inOut(Easing.quad),
-      useNativeDriver: true,
-    }).start();
-  }, [dayTransition, selectedDateKey]);
+  }, [selectedDateKey]);
 
   // Refresh today's data on entry. Reset the selected day on blur so Home is
   // already on today before it becomes visible again, avoiding an entry flicker.
@@ -237,19 +247,12 @@ export default function HomeScreen() {
       scrollRef.current?.scrollTo({ y: 0, animated: false });
       const todayOnFocus = localCalendarDate(new Date());
       setSelectedLogs(loadHomeLogs(toLocalDateKey(todayOnFocus)));
-      dayTransition.stopAnimation();
-      dayTransition.setValue(1);
-      setDayTransitionDirection(0);
-
       return () => {
         const todayOnBlur = localCalendarDate(new Date());
         setSelectedDate(todayOnBlur);
         setSelectedLogs(loadHomeLogs(toLocalDateKey(todayOnBlur)));
-        dayTransition.stopAnimation();
-        dayTransition.setValue(1);
-        setDayTransitionDirection(0);
       };
-    }, [dayTransition])
+    }, [])
   );
 
   // A focused Home-tab press scrolls to the top. It changes the day only when
@@ -313,6 +316,18 @@ export default function HomeScreen() {
     setIsEditingNote(false);
   }
 
+  useEffect(() => {
+    if (!isEditingNote) return;
+
+    const caretPosition = (openNote?.note ?? '').length;
+    const frame = requestAnimationFrame(() => {
+      noteInputRef.current?.focus();
+      noteInputRef.current?.setSelection(caretPosition, caretPosition);
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [isEditingNote, openNote]);
+
   return (
     <SafeAreaView className="flex-1 bg-sand-100">
       <ScrollView
@@ -327,21 +342,11 @@ export default function HomeScreen() {
 
         <View className="mb-7">
           <View className="relative w-full h-10 items-center justify-center">
-            <Animated.View
-              style={{
-                opacity: dayTransition,
-                transform: [{
-                  translateX: dayTransition.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [dayTransitionDirection * 12, 0],
-                  }),
-                }],
-              }}
-            >
+            <View>
               <Text className="text-lg font-semibold text-ink-900 text-center">
                 {isToday ? 'Today' : formatLongLocalDate(selectedDate)}
               </Text>
-            </Animated.View>
+            </View>
             <Pressable
               onPress={() => transitionToDate(shiftLocalDate(selectedDate, -1))}
               className="absolute left-0 top-0 w-10 h-10 rounded-full bg-white items-center justify-center"
@@ -374,7 +379,7 @@ export default function HomeScreen() {
                 <SalahCard
                   key={name}
                   name={name}
-                  time={formatPrayerTime(selectedPrayerTimes[name])}
+                  time={formatPrayerTime(selectedPrayerTimes[name], use24HourTime)}
                   status={status}
                   rating={log?.rating}
                   distraction={log?.distraction}
@@ -394,13 +399,40 @@ export default function HomeScreen() {
         )}
       </ScrollView>
 
+      {showSignInSuccess && (
+        <Modal
+          visible
+          transparent
+          animationType="fade"
+          statusBarTranslucent
+          navigationBarTranslucent
+          onRequestClose={() => {}}
+        >
+          <View className="flex-1 bg-black/40 items-center justify-center">
+            <View
+              accessibilityViewIsModal
+              className="w-16 h-16 rounded-2xl bg-white border border-sand-200 items-center justify-center"
+              style={{
+                shadowColor: '#1A1917',
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.12,
+                shadowRadius: 16,
+                elevation: 8,
+              }}
+            >
+              <CheckCircleIcon size={34} color="#5A7A5A" />
+            </View>
+          </View>
+        </Modal>
+      )}
+
       <Modal
         visible={openNote !== null}
         transparent
         animationType="fade"
         statusBarTranslucent
         navigationBarTranslucent
-        onRequestClose={isEditingNote ? cancelNoteEdit : closeNote}
+        onRequestClose={closeNote}
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -409,7 +441,7 @@ export default function HomeScreen() {
           <Pressable
             accessibilityRole="none"
             className="flex-1 bg-black/40 items-center justify-center px-6"
-            onPress={isEditingNote ? cancelNoteEdit : closeNote}
+            onPress={closeNote}
           >
             <Pressable
               accessibilityViewIsModal
@@ -429,6 +461,7 @@ export default function HomeScreen() {
 
               <View className="relative bg-white rounded-2xl border border-yellow-500 px-4 pt-4 pb-11 min-h-32">
                 <TextInput
+                  ref={noteInputRef}
                   value={isEditingNote ? noteDraft : openNote?.note ?? ''}
                   onChangeText={(text) => setNoteDraft(text.slice(0, NOTE_MAX_LENGTH))}
                   maxLength={NOTE_MAX_LENGTH}
@@ -480,7 +513,7 @@ export default function HomeScreen() {
                       style={{ width: '100%' }}
                     >
                       <Text className={`text-sm font-semibold ${
-                        noteDraft.trim() ? 'text-white' : 'text-ink-300'
+                        noteDraft.trim() ? 'text-pure-white' : 'text-ink-300'
                       }`}>
                         Save note
                       </Text>
@@ -524,6 +557,7 @@ function SalahCard({
   onPress: () => void;
   onNotePress?: () => void;
 }) {
+  const theme = useThemeColors();
   const isInteractive = status !== 'logged' && status !== 'historical';
 
   const borderColor = {
@@ -538,9 +572,8 @@ function SalahCard({
     <Pressable
       onPress={onPress}
       accessibilityState={{ disabled: !isInteractive }}
-      className={`rounded-2xl px-5 py-4 flex-row justify-between items-center border bg-white ${borderColor} ${
-        status === 'past' ? 'opacity-60' : ''
-      }`}
+      className={`rounded-2xl px-5 py-4 flex-row justify-between items-center border bg-white ${borderColor}`}
+      style={{ opacity: status === 'past' ? 0.6 : 1 }}
     >
       <View className="flex-1">
         <View className="flex-row items-center gap-x-2">
@@ -585,7 +618,7 @@ function SalahCard({
               {[1, 2, 3, 4, 5].map((n) => (
                 n <= rating
                   ? <StarSolidIcon key={n} size={12} color="#5A7A5A" />
-                  : <StarIcon key={n} size={12} color="#DDD0BA" />
+                  : <StarIcon key={n} size={12} color={theme.borderStrong} />
               ))}
             </View>
           </View>

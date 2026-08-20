@@ -185,12 +185,12 @@ export default function SalahModeScreen() {
 
   // ── Active Salah screen ────────────────────────────────────────────────────
   return (
-    <View className="flex-1 bg-ink-900 items-center justify-center px-8">
+    <View className="flex-1 bg-[#1A1917] items-center justify-center px-8">
       <StatusBar barStyle="light-content" backgroundColor="#1A1917" />
 
       <View className="items-center gap-y-6 mb-20">
         <Text className="text-6xl">🤲</Text>
-        <Text className="text-white text-3xl font-medium text-center leading-relaxed">
+        <Text className="text-pure-white text-3xl font-medium text-center leading-relaxed">
           {"Kindly do not disturb me,\nI am praying :)"}
         </Text>
         {activeSalah && (
@@ -208,7 +208,7 @@ export default function SalahModeScreen() {
           <Pressable
             onPress={() => void handleDndAccessRequest()}
             accessibilityRole="button"
-            className="border border-ink-500 py-2.5 px-4 rounded-xl active:bg-ink-700"
+            className="border border-[#6B6360] py-2.5 px-4 rounded-xl active:bg-[#3D3A37]"
           >
             <Text className="text-ink-300 text-xs text-center">Allow Do Not Disturb access</Text>
           </Pressable>
@@ -232,7 +232,7 @@ export default function SalahModeScreen() {
       </View>
 
       <Pressable
-        className="border border-ink-500 py-4 px-10 rounded-2xl active:bg-ink-700"
+        className="border border-[#6B6360] py-4 px-10 rounded-2xl active:bg-[#3D3A37]"
         onPress={handleEndSalah}
       >
         <Text className="text-ink-300 font-medium text-base">End Salah</Text>

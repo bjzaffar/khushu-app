@@ -2,11 +2,12 @@ import {
   View,
   ScrollView,
   Pressable,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
-  Animated,
-  Easing,
   Modal,
+  TextInput as NativeTextInput,
+  type FocusEvent,
 } from 'react-native';
 import { Text, TextInput } from '@/components/ui/Typography';
 import { AppDialog } from '@/components/ui/AppDialog';
@@ -55,6 +56,7 @@ import {
   generateAIReminder,
 } from '@/lib/notifications/reminderContent';
 import { writeWidgetData } from '@/lib/widget/widgetData';
+import { useThemeColors } from '@/lib/theme/colors';
 
 // Built-in keys excluding 'other' (rendered separately)
 const BUILTIN_DISTRACTION_KEYS = Object.keys(DISTRACTION_LABELS).filter(
@@ -99,8 +101,9 @@ function getSettingJSON(key: string): unknown[] {
 }
 
 export default function LogScreen() {
+  const theme = useThemeColors();
   const params = useLocalSearchParams<{ salah?: string; fromSalahMode?: string }>();
-  const { todaysPrayerTimes, userId } = useAppStore();
+  const { todaysPrayerTimes, userId, logTabReselectionVersion } = useAppStore();
   const isPremium = useAppStore(selectIsPremium);
 
   const resolveInitialSalah = useCallback((day: LogDay, allowNavigationIntent = false): SalahName => {
@@ -125,12 +128,15 @@ export default function LogScreen() {
   }, [params.salah, todaysPrayerTimes]);
 
   const [activeDay, setActiveDay] = useState<LogDay>('today');
-  const [displayedDay, setDisplayedDay] = useState<LogDay>('today');
   const [selectedSalah, setSelectedSalah] = useState<SalahName>(() => resolveInitialSalah('today', true));
   const lastIntentSalahRef = useRef<SalahName | null>(null);
   const scrollRef = useRef<ScrollView>(null);
-  const dayTransition = useRef(new Animated.Value(1)).current;
-  const [dayTransitionDirection, setDayTransitionDirection] = useState(0);
+  const scrollOffsetYRef = useRef(0);
+  const lastLogTabReselection = useRef(logTabReselectionVersion);
+  const inputScrollStartYRef = useRef<number | null>(null);
+  const inputScrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const otherInputRef = useRef<NativeTextInput>(null);
+  const noteInputRef = useRef<NativeTextInput>(null);
   useScrollToTop(scrollRef);
   const [focusRating, setFocusRating] = useState(0);
   const [isRatingGestureActive, setIsRatingGestureActive] = useState(false);
@@ -159,6 +165,55 @@ export default function LogScreen() {
   const starsContainerRef = useRef<View>(null);
   const starsContainerXRef = useRef(0);
   const starsContainerWidthRef = useRef(0);
+
+  const scrollInputAboveKeyboard = useCallback((event: FocusEvent) => {
+    const input = event.target;
+    const startingOffset = inputScrollStartYRef.current ?? scrollOffsetYRef.current;
+    const restoreStartingOffset = () => {
+      scrollOffsetYRef.current = startingOffset;
+      scrollRef.current?.scrollTo({ y: startingOffset, animated: false });
+    };
+
+    restoreStartingOffset();
+    const scrollToInput = () => {
+      const keyboardTop = Keyboard.metrics()?.screenY;
+      if (!keyboardTop) return;
+
+      restoreStartingOffset();
+      input.measureInWindow((_x, inputY, _width, inputHeight) => {
+        const additionalOffset = inputY + inputHeight + 24 - keyboardTop;
+        if (additionalOffset <= 0) return;
+
+        scrollRef.current?.scrollTo({
+          y: scrollOffsetYRef.current + additionalOffset,
+          animated: true,
+        });
+      });
+    };
+
+    if (inputScrollTimeoutRef.current) clearTimeout(inputScrollTimeoutRef.current);
+    inputScrollTimeoutRef.current = setTimeout(scrollToInput, 300);
+  }, []);
+
+  useEffect(() => {
+    const input = showOtherInput ? otherInputRef.current : showNoteInput ? noteInputRef.current : null;
+    if (!input) return;
+
+    const frame = requestAnimationFrame(() => {
+      const startingOffset = inputScrollStartYRef.current;
+      if (startingOffset !== null) {
+        scrollOffsetYRef.current = startingOffset;
+        scrollRef.current?.scrollTo({ y: startingOffset, animated: false });
+      }
+      input.focus();
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [showNoteInput, showOtherInput]);
+
+  useEffect(() => () => {
+    if (inputScrollTimeoutRef.current) clearTimeout(inputScrollTimeoutRef.current);
+  }, []);
 
   const setRatingFromPointer = useCallback((pageX: number) => {
     const width = starsContainerWidthRef.current;
@@ -220,28 +275,20 @@ export default function LogScreen() {
 
   const handleDayChange = useCallback((day: LogDay) => {
     if (day === activeDay) return;
-    const { map } = loadLogsForDay(day);
-    setLogsByDay((current) => ({ ...current, [day]: map }));
-    setActiveDay(day);
-    resetFormForDay(day, map);
+    try {
+      const { map } = loadLogsForDay(day);
+      setLogsByDay((current) => ({ ...current, [day]: map }));
+      setActiveDay(day);
+      resetFormForDay(day, map);
+    } catch (error) {
+      console.error(`[log] Failed to open ${day}:`, error);
+    }
   }, [activeDay, loadLogsForDay, resetFormForDay]);
 
   const transitionToDay = useCallback((day: LogDay) => {
     if (day === activeDay) return;
-    const direction = day === 'yesterday' ? -1 : 1;
-    setDayTransitionDirection(direction);
-    dayTransition.stopAnimation();
-    dayTransition.setValue(0);
-    setDisplayedDay(day);
     handleDayChange(day);
-
-    Animated.timing(dayTransition, {
-      toValue: 1,
-      duration: 360,
-      easing: Easing.inOut(Easing.quad),
-      useNativeDriver: true,
-    }).start();
-  }, [activeDay, dayTransition, handleDayChange]);
+  }, [activeDay, handleDayChange]);
 
   // When screen gains focus, refresh its log data and target the first unlogged salah.
   // Reset the form on blur instead, so returning never briefly renders stale form state.
@@ -255,9 +302,6 @@ export default function LogScreen() {
       const yesterday = loadLogsForDay('yesterday');
       setLogsByDay({ today: today.map, yesterday: yesterday.map });
       setActiveDay('today');
-      setDisplayedDay('today');
-      dayTransition.setValue(1);
-
       const loggedSet = new Set(today.logs.map((l) => l.salahName));
       const firstUnlogged = SALAH_NAMES.find((name) => !loggedSet.has(name));
 
@@ -276,8 +320,6 @@ export default function LogScreen() {
 
       return () => {
         setActiveDay('today');
-        setDisplayedDay('today');
-        dayTransition.setValue(1);
         resetFormForDay('today');
         setShowOtherInput(false);
         setOtherInputText('');
@@ -290,8 +332,21 @@ export default function LogScreen() {
         setEditDistraction(null);
         setDistractionNameInput('');
       };
-    }, [dayTransition, loadLogsForDay, params.salah, resetFormForDay])
+    }, [loadLogsForDay, params.salah, resetFormForDay])
   );
+
+  // Pressing the focused Log tab starts a fresh entry for today's first
+  // unlogged Salah, without requiring the user to leave the screen first.
+  useEffect(() => {
+    if (lastLogTabReselection.current === logTabReselectionVersion) return;
+    lastLogTabReselection.current = logTabReselectionVersion;
+
+    const { map } = loadLogsForDay('today');
+    scrollOffsetYRef.current = 0;
+    setLogsByDay((current) => ({ ...current, today: map }));
+    setActiveDay('today');
+    resetFormForDay('today', map);
+  }, [loadLogsForDay, logTabReselectionVersion, resetFormForDay]);
 
   function toggleDistraction(key: string) {
     setShowOtherInput(false);
@@ -302,6 +357,7 @@ export default function LogScreen() {
   }
 
   function openNoteEditor() {
+    inputScrollStartYRef.current = scrollOffsetYRef.current;
     setSelectedDistractions((current) => current.filter((key) => key !== 'other'));
     setShowOtherInput(false);
     setOtherInputText('');
@@ -497,7 +553,7 @@ export default function LogScreen() {
     focusRating === 5 || selectedDistractions.length > 0
   );
   const canSave = hasValidReflection && !showOtherInput && !showNoteInput && !editMode;
-  const activeLogs = logsByDay[activeDay];
+  const activeLogs = logsByDay[activeDay] ?? {};
   const allSalahsLogged = SALAH_NAMES.every((name) => name in activeLogs);
   const showAllSalahsLogged = allSalahsLogged && !isRelogging;
 
@@ -603,9 +659,7 @@ export default function LogScreen() {
     return (
       <SafeAreaView className="flex-1 bg-sand-100 items-center justify-center px-8">
         <View className="items-center gap-y-6">
-          <View className="w-16 h-16 rounded-full bg-sage-600 items-center justify-center">
-            <CheckCircleSolidIcon size={28} color="#FFFFFF" />
-          </View>
+          <CheckCircleSolidIcon size={52} color="#5A7A5A" />
           <Text className="text-ink-900 text-xl font-semibold text-center">
             {SALAH_DISPLAY_NAMES[savedSalahName]} logged.
           </Text>
@@ -620,7 +674,7 @@ export default function LogScreen() {
               className="bg-sage-600 py-3 px-6 rounded-2xl active:bg-sage-700"
               onPress={() => router.replace('/(tabs)')}
             >
-              <Text className="text-white font-medium">Done</Text>
+              <Text className="text-pure-white font-medium">Done</Text>
             </Pressable>
           </View>
         </View>
@@ -641,27 +695,21 @@ export default function LogScreen() {
           contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 }}
           keyboardShouldPersistTaps="handled"
           scrollEnabled={!isRatingGestureActive}
+          onScroll={(event) => {
+            scrollOffsetYRef.current = event.nativeEvent.contentOffset.y;
+          }}
+          scrollEventThrottle={16}
         >
           <Text className="text-2xl font-semibold text-ink-900 mb-5">Log Salah</Text>
 
           <View className="mb-7">
             <View className="relative w-full h-10 items-center justify-center">
-              <Animated.View
-                style={{
-                  opacity: dayTransition,
-                  transform: [{
-                    translateX: dayTransition.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [dayTransitionDirection * 12, 0],
-                    }),
-                  }],
-                }}
-              >
+              <View>
                 <Text className="text-lg font-semibold text-ink-900 text-center">
-                  {DAY_LABELS[displayedDay]}
+                  {DAY_LABELS[activeDay]}
                 </Text>
-              </Animated.View>
-              {displayedDay === 'today' && (
+              </View>
+              {activeDay === 'today' && (
                 <Pressable
                   onPress={() => transitionToDay('yesterday')}
                   className="absolute left-0 top-0 w-10 h-10 rounded-full bg-white items-center justify-center"
@@ -671,7 +719,7 @@ export default function LogScreen() {
                   <ChevronLeftIcon size={16} color="#6F675F" />
                 </Pressable>
               )}
-              {displayedDay === 'yesterday' && (
+              {activeDay === 'yesterday' && (
                 <Pressable
                   onPress={() => transitionToDay('today')}
                   className="absolute right-0 top-0 w-10 h-10 rounded-full bg-white items-center justify-center"
@@ -711,7 +759,7 @@ export default function LogScreen() {
                   >
                     <Text
                       className={`text-xs font-medium ${
-                        isSelected ? 'text-white' : 'text-ink-700'
+                        isSelected ? 'text-pure-white' : 'text-ink-700'
                       }`}
                     >
                       {SALAH_DISPLAY_NAMES[name]}
@@ -725,9 +773,7 @@ export default function LogScreen() {
           {/* ── Focus Rating ───────────────────────────────────────────────── */}
           {showAllSalahsLogged ? (
             <View className="items-center py-10 gap-y-4">
-              <View className="w-16 h-16 rounded-full bg-sage-600 items-center justify-center">
-                <CheckCircleSolidIcon size={28} color="#FFFFFF" />
-              </View>
+              <CheckCircleSolidIcon size={52} color="#5A7A5A" />
               <Text className="text-ink-900 text-xl font-semibold text-center">
                 All the Salahs for {activeDay} have been logged.
               </Text>
@@ -766,7 +812,7 @@ export default function LogScreen() {
                   >
                     {n <= focusRating
                       ? <StarSolidIcon size={30} color="#5A7A5A" />
-                      : <StarIcon size={30} color="#DDD0BA" />}
+                      : <StarIcon size={30} color={theme.borderStrong} />}
                     <Text className="text-ink-300 text-xs">{n}</Text>
                   </View>
                 ))}
@@ -823,7 +869,7 @@ export default function LogScreen() {
                       onPress={() => toggleDistraction(key)}
                       className={`py-2 px-4 rounded-xl ${active ? 'bg-sage-600' : 'bg-sand-200'}`}
                     >
-                      <Text className={`text-sm font-medium ${active ? 'text-white' : 'text-ink-700'}`}>
+                      <Text className={`text-sm font-medium ${active ? 'text-pure-white' : 'text-ink-700'}`}>
                         {label}
                       </Text>
                     </Pressable>
@@ -858,7 +904,7 @@ export default function LogScreen() {
                     onPress={() => toggleDistraction(key)}
                     className={`py-2 px-4 rounded-xl ${active ? 'bg-sage-600' : 'bg-sand-200'}`}
                   >
-                    <Text className={`text-sm font-medium ${active ? 'text-white' : 'text-ink-700'}`}>
+                    <Text className={`text-sm font-medium ${active ? 'text-pure-white' : 'text-ink-700'}`}>
                       {label}
                     </Text>
                   </Pressable>
@@ -869,6 +915,7 @@ export default function LogScreen() {
               {!hiddenBuiltins.includes('other') && !editMode && (
                 <Pressable
                   onPress={() => {
+                    inputScrollStartYRef.current = scrollOffsetYRef.current;
                     setSelectedDistractions(['other']);
                     setShowOtherInput(true);
                     setShowNoteInput(false);
@@ -879,7 +926,7 @@ export default function LogScreen() {
                   }`}
                 >
                   <Text className={`text-sm font-medium ${
-                    selectedDistractions.includes('other') ? 'text-white' : 'text-ink-700'
+                    selectedDistractions.includes('other') ? 'text-pure-white' : 'text-ink-700'
                   }`}>Other</Text>
                 </Pressable>
               )}
@@ -920,12 +967,13 @@ export default function LogScreen() {
               <View className="mt-2 bg-white rounded-2xl border border-sand-200 px-4 py-3">
                 <Text className="text-ink-500 text-xs mb-2">Name this distraction:</Text>
                 <TextInput
+                  ref={otherInputRef}
                   value={otherInputText}
                   onChangeText={(t) => setOtherInputText(t.slice(0, CUSTOM_DISTRACTION_MAX_LENGTH))}
                   maxLength={CUSTOM_DISTRACTION_MAX_LENGTH}
                   placeholder="e.g. Hunger, Noise... (clear and simple)"
                   placeholderTextColor="#9B9189"
-                  autoFocus
+                  onFocus={scrollInputAboveKeyboard}
                   className="text-ink-700 text-sm"
                   onSubmitEditing={handleAddCustomDistraction}
                 />
@@ -951,7 +999,7 @@ export default function LogScreen() {
                     }`}
                   >
                     <Text className={`text-sm font-medium ${
-                      otherInputText.trim() ? 'text-white' : 'text-ink-300'
+                      otherInputText.trim() ? 'text-pure-white' : 'text-ink-300'
                     }`}>
                       Add
                     </Text>
@@ -994,12 +1042,13 @@ export default function LogScreen() {
                 />
                 <Text className="text-ink-500 text-xs mb-2 pr-8">Add a note:</Text>
                 <TextInput
+                  ref={noteInputRef}
                   value={noteInputText}
                   onChangeText={(text) => setNoteInputText(text.slice(0, NOTE_MAX_LENGTH))}
                   maxLength={NOTE_MAX_LENGTH}
                   placeholder="e.g. Worried about maths exam tomorrow..."
                   placeholderTextColor="#9B9189"
-                  autoFocus
+                  onFocus={scrollInputAboveKeyboard}
                   multiline
                   textAlignVertical="top"
                   className="text-ink-700 text-sm min-h-20"
@@ -1022,7 +1071,7 @@ export default function LogScreen() {
                     }`}
                   >
                     <Text className={`text-sm font-medium ${
-                      noteInputText.trim() ? 'text-white' : 'text-ink-300'
+                      noteInputText.trim() ? 'text-pure-white' : 'text-ink-300'
                     }`}>
                       Add
                     </Text>
@@ -1081,7 +1130,7 @@ export default function LogScreen() {
           >
             <Text
               className={`font-semibold text-base ${
-                canSave ? 'text-white' : 'text-ink-300'
+                canSave ? 'text-pure-white' : 'text-ink-300'
               }`}
             >
               Save Reflection
@@ -1177,6 +1226,7 @@ export default function LogScreen() {
           ? `${SALAH_DISPLAY_NAMES[relogSalah]} has already been logged ${activeDay}. Would you like to relog it?`
           : ''}
         actionLayout="horizontal"
+        showIcon={false}
         onDismiss={() => setRelogSalah(null)}
         actions={[
           { label: 'No', tone: 'secondary', onPress: () => setRelogSalah(null) },

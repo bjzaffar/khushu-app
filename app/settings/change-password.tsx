@@ -127,7 +127,7 @@ export default function ChangePasswordScreen() {
                 >
                   {loading
                     ? <ActivityIndicator color="#FFFFFF" />
-                    : <Text className="text-white font-semibold text-base">Send reset link</Text>
+                    : <Text className="text-pure-white font-semibold text-base">Send reset link</Text>
                   }
                 </Pressable>
               </View>
@@ -224,7 +224,7 @@ export default function ChangePasswordScreen() {
                 >
                   {loading
                     ? <ActivityIndicator color="#FFFFFF" />
-                    : <Text className="text-white font-semibold text-base">Update password</Text>
+                    : <Text className="text-pure-white font-semibold text-base">Update password</Text>
                   }
                 </Pressable>
               </View>

@@ -45,7 +45,7 @@ export default function OnboardingWelcome() {
             className="bg-sage-500 py-4 rounded-2xl items-center active:bg-sage-600"
             onPress={() => router.push('/onboarding/location')}
           >
-            <Text className="text-white font-semibold text-base">Get Started</Text>
+            <Text className="text-pure-white font-semibold text-base">Get Started</Text>
           </Pressable>
           <Text className="text-center text-ink-100 text-xs">
             No account required. Your data stays on your device.

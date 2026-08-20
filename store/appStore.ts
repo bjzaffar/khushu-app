@@ -26,6 +26,14 @@ interface AppState {
   // Incremented when the already-focused Home tab is pressed again.
   homeTabReselectionVersion: number;
   requestHomeTabReselection: () => void;
+  // Incremented when the already-focused Log tab is pressed again.
+  logTabReselectionVersion: number;
+  requestLogTabReselection: () => void;
+
+  // One-time confirmation shown after an explicit sign-in reaches Home.
+  showSignInSuccessNotice: boolean;
+  requestSignInSuccessNotice: () => void;
+  clearSignInSuccessNotice: () => void;
 
   // ── Salah Mode ───────────────────────────────────────────────────────────────
   salahModeActive: boolean;
@@ -38,6 +46,12 @@ interface AppState {
   setReminderMinutesBefore: (mins: number) => void;
   postSalahPromptEnabled: boolean;
   setPostSalahPromptEnabled: (val: boolean) => void;
+
+  // ── General settings ────────────────────────────────────────────────────────
+  use24HourTime: boolean;
+  setUse24HourTime: (val: boolean) => void;
+  darkMode: boolean;
+  setDarkMode: (val: boolean) => void;
 
   // ── Prayer calculation settings ───────────────────────────────────────────────
   calculationMethod: CalculationMethodKey;
@@ -78,6 +92,13 @@ export const useAppStore = create<AppState>((set) => ({
   requestHomeTabReselection: () => set((state) => ({
     homeTabReselectionVersion: state.homeTabReselectionVersion + 1,
   })),
+  logTabReselectionVersion: 0,
+  requestLogTabReselection: () => set((state) => ({
+    logTabReselectionVersion: state.logTabReselectionVersion + 1,
+  })),
+  showSignInSuccessNotice: false,
+  requestSignInSuccessNotice: () => set({ showSignInSuccessNotice: true }),
+  clearSignInSuccessNotice: () => set({ showSignInSuccessNotice: false }),
 
   // Salah Mode
   salahModeActive: false,
@@ -90,6 +111,12 @@ export const useAppStore = create<AppState>((set) => ({
   setReminderMinutesBefore: (mins) => set({ reminderMinutesBefore: mins }),
   postSalahPromptEnabled: true,
   setPostSalahPromptEnabled: (val) => set({ postSalahPromptEnabled: val }),
+
+  // General
+  use24HourTime: false,
+  setUse24HourTime: (val) => set({ use24HourTime: val }),
+  darkMode: false,
+  setDarkMode: (val) => set({ darkMode: val }),
 
   // Prayer calculation
   calculationMethod: 'MuslimWorldLeague',

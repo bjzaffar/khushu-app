@@ -4,6 +4,7 @@ import { AppState, View } from 'react-native';
 import { Text } from '@/components/ui/Typography';
 import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useColorScheme } from 'nativewind';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Notifications from 'expo-notifications';
 import {
@@ -43,6 +44,7 @@ import {
   identifyRevenueCatUser,
   refreshPremiumStatus,
 } from '@/lib/revenuecat/service';
+import { getThemeColors } from '@/lib/theme/colors';
 
 // Capture the deep link URL IMMEDIATELY at module scope — before any async init blocks the navigator.
 // Without this, release builds lose the URL because the callback screen can't mount until
@@ -68,6 +70,9 @@ export default function RootLayout() {
     setTodaysPrayerTimes,
     setReminderMinutesBefore,
     setPostSalahPromptEnabled,
+    setUse24HourTime,
+    darkMode,
+    setDarkMode,
     setCalculationMethod,
     setAsrMadhab,
     setDndDuringSalah,
@@ -78,6 +83,8 @@ export default function RootLayout() {
     isDbReady,
   } = useAppStore();
   const isPremium = useAppStore(selectIsPremium);
+  const { setColorScheme } = useColorScheme();
+  const theme = getThemeColors(darkMode);
   const [initError, setInitError] = useState<string | null>(null);
   const authVersionRef = useRef(0);
 
@@ -97,9 +104,17 @@ export default function RootLayout() {
           onboardingComplete = true;
         }
         if (onboardingComplete) setHasCompletedOnboarding(true);
+        await initDatabase();
+
+        // Resolve the app-selected theme before revealing any React Native
+        // surfaces. Otherwise Android's system theme can render the first frame
+        // and then be replaced by the persisted app theme after navigation mounts.
+        const darkModeRow = db.select().from(settings).where(eq(settings.key, 'dark_mode')).get();
+        const persistedDarkMode = darkModeRow?.value === 'true';
+        setColorScheme(persistedDarkMode ? 'dark' : 'light');
+        setDarkMode(persistedDarkMode);
         setIsHydrated(true);
 
-        await initDatabase();
         await setupNotificationChannel();
 
         // Configure the purchase SDK before resolving identity. It remains a
@@ -133,6 +148,9 @@ export default function RootLayout() {
         const postRow = db.select().from(settings).where(eq(settings.key, 'post_salah_prompt_enabled')).get();
         const postEnabled = postRow?.value !== 'false';
         setPostSalahPromptEnabled(postEnabled);
+
+        const timeFormatRow = db.select().from(settings).where(eq(settings.key, 'use_24_hour_time')).get();
+        setUse24HourTime(timeFormatRow?.value === 'true');
 
         // Reload location + prayer times + schedule notifications
         const latRow = db.select().from(settings).where(eq(settings.key, 'location_lat')).get();
@@ -306,11 +324,11 @@ export default function RootLayout() {
   // This makes startup errors debuggable.
   if (initError) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#FAF7F2' }}>
-        <Text style={{ fontWeight: 'bold', fontSize: 16, marginBottom: 12, color: '#1A1917' }}>
+      <View style={{ flex: 1, justifyContent: 'center', padding: 24, backgroundColor: theme.backgroundAlt }}>
+        <Text style={{ fontWeight: 'bold', fontSize: 16, marginBottom: 12, color: theme.text }}>
           Startup error:
         </Text>
-        <Text style={{ fontSize: 12, color: '#6B6360', lineHeight: 18 }}>
+        <Text style={{ fontSize: 12, color: theme.greyDark, lineHeight: 18 }}>
           {initError}
         </Text>
       </View>
@@ -322,21 +340,23 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <StatusBar style="dark" />
-      <Stack screenOptions={{ headerShown: false }}>
-        {hasCompletedOnboarding ? (
-          <Stack.Screen name="(tabs)" />
-        ) : (
-          <Stack.Screen name="onboarding" />
-        )}
-        <Stack.Screen name="auth/callback" />
-        <Stack.Screen name="settings/change-password" />
-        <Stack.Screen name="salah-mode" options={{ presentation: 'fullScreenModal' }} />
-        <Stack.Screen name="paywall" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="+not-found" />
-      </Stack>
-    </GestureHandlerRootView>
+      <View className="flex-1 bg-sand-100">
+        <GestureHandlerRootView style={{ flex: 1, backgroundColor: 'transparent' }}>
+          <StatusBar style={darkMode ? 'light' : 'dark'} />
+          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: 'transparent' } }}>
+            {hasCompletedOnboarding ? (
+              <Stack.Screen name="(tabs)" />
+            ) : (
+              <Stack.Screen name="onboarding" />
+            )}
+            <Stack.Screen name="auth/callback" />
+            <Stack.Screen name="settings/change-password" />
+            <Stack.Screen name="salah-mode" options={{ presentation: 'fullScreenModal' }} />
+            <Stack.Screen name="paywall" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="+not-found" />
+          </Stack>
+        </GestureHandlerRootView>
+      </View>
     </SafeAreaProvider>
   );
 }

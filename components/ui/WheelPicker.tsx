@@ -21,23 +21,60 @@ interface Props {
 
 export function WheelPicker({ values, selectedValue, onValueChange, formatValue, onTouchStart, onTouchEnd }: Props) {
   const scrollRef = useRef<ScrollView>(null);
+  const settleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const index = values.indexOf(selectedValue);
+    let initialScrollTimeout: ReturnType<typeof setTimeout> | null = null;
     if (index >= 0) {
-      setTimeout(() => {
+      initialScrollTimeout = setTimeout(() => {
         scrollRef.current?.scrollTo({ y: index * ITEM_HEIGHT, animated: false });
       }, 50);
     }
+    return () => {
+      if (initialScrollTimeout) clearTimeout(initialScrollTimeout);
+      if (settleTimeoutRef.current) clearTimeout(settleTimeoutRef.current);
+    };
+    // The initial value determines only the first non-animated scroll position.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleScrollEnd = useCallback(
-    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const index = Math.round(e.nativeEvent.contentOffset.y / ITEM_HEIGHT);
+  const commitOffset = useCallback(
+    (offsetY: number) => {
+      const index = Math.round(offsetY / ITEM_HEIGHT);
       const clamped = Math.max(0, Math.min(index, values.length - 1));
-      onValueChange(values[clamped]);
+      const nextValue = values[clamped];
+      if (nextValue !== selectedValue) onValueChange(nextValue);
     },
-    [values, onValueChange]
+    [onValueChange, selectedValue, values]
+  );
+
+  const clearPendingSettle = useCallback(() => {
+    if (!settleTimeoutRef.current) return;
+    clearTimeout(settleTimeoutRef.current);
+    settleTimeoutRef.current = null;
+  }, []);
+
+  const handleScrollEndDrag = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const offsetY = e.nativeEvent.contentOffset.y;
+      clearPendingSettle();
+      // If momentum starts, it cancels this fallback. If it does not, this is
+      // the final resting value and is committed once after the snap settles.
+      settleTimeoutRef.current = setTimeout(() => {
+        settleTimeoutRef.current = null;
+        commitOffset(offsetY);
+      }, 100);
+    },
+    [clearPendingSettle, commitOffset]
+  );
+
+  const handleMomentumScrollEnd = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      clearPendingSettle();
+      commitOffset(e.nativeEvent.contentOffset.y);
+    },
+    [clearPendingSettle, commitOffset]
   );
 
   const centerOffset = Math.floor(VISIBLE_ITEMS / 2);
@@ -71,8 +108,9 @@ export function WheelPicker({ values, selectedValue, onValueChange, formatValue,
         showsVerticalScrollIndicator={false}
         nestedScrollEnabled={true}
         contentContainerStyle={{ paddingVertical: ITEM_HEIGHT * centerOffset }}
-        onMomentumScrollEnd={handleScrollEnd}
-        onScrollEndDrag={handleScrollEnd}
+        onMomentumScrollBegin={clearPendingSettle}
+        onMomentumScrollEnd={handleMomentumScrollEnd}
+        onScrollEndDrag={handleScrollEndDrag}
       >
         {values.map((v) => {
           const selected = v === selectedValue;

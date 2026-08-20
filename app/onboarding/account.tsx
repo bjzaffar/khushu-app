@@ -56,7 +56,7 @@ export default function AccountScreen() {
   const { from, returnTo } = useLocalSearchParams<{ from?: string; returnTo?: string }>();
   const isFromSettings = from === 'settings';
 
-  const { setHasCompletedOnboarding, setUserId } = useAppStore();
+  const { setHasCompletedOnboarding, setUserId, requestSignInSuccessNotice } = useAppStore();
 
   const [tab, setTab]         = useState<Tab>('signin');
   const [email, setEmail]     = useState('');
@@ -96,8 +96,10 @@ export default function AccountScreen() {
     } else if (!isFromSettings) {
       await markOnboardingComplete();
       setHasCompletedOnboarding(true);
+      requestSignInSuccessNotice();
       resetToAppRoot();
     } else {
+      requestSignInSuccessNotice();
       resetToAppRoot();
     }
   }
@@ -131,16 +133,39 @@ export default function AccountScreen() {
       setStatus('error');
       return;
     }
+    const normalizedEmail = email.trim().toLowerCase();
     setStatus('loading');
     setErrorMsg('');
     try {
-      const { data, error } =
-        tab === 'signin'
-          ? await supabase.auth.signInWithPassword({ email: email.trim(), password })
-          : await supabase.auth.signUp({ email: email.trim(), password });
+      if (tab === 'signin') {
+        const { data: checkData, error: checkError } = await supabase.functions.invoke(
+          'check-email-exists',
+          { body: { email: normalizedEmail } },
+        );
+        if (checkError) {
+          setErrorMsg(isNetworkError(checkError) ? 'No internet connection' : 'Unable to check this account. Please try again.');
+          setStatus('error');
+          return;
+        }
+        if (!checkData?.exists) {
+          setErrorMsg('Account does not exist');
+          setStatus('error');
+          return;
+        }
+      }
+
+      const { data, error } = tab === 'signin'
+        ? await supabase.auth.signInWithPassword({ email: normalizedEmail, password })
+        : await supabase.auth.signUp({ email: normalizedEmail, password });
 
       if (error) {
-        setErrorMsg(error.message);
+        setErrorMsg(
+          tab === 'signin' && /invalid login credentials/i.test(error.message)
+            ? 'Invalid password'
+            : isNetworkError(error)
+              ? 'No internet connection'
+              : error.message
+        );
         setStatus('error');
         return;
       }
@@ -150,11 +175,11 @@ export default function AccountScreen() {
         await onAuthSuccess(userId);
       } else if (tab === 'signup') {
         if (returnTo === 'paywall') await setPendingAuthReturn('paywall');
-        setConfirmEmail(email.trim());
+        setConfirmEmail(normalizedEmail);
         setStatus('confirm_email');
       }
-    } catch {
-      setErrorMsg('Something went wrong. Please try again.');
+    } catch (error) {
+      setErrorMsg(isNetworkError(error) ? 'No internet connection' : 'Something went wrong. Please try again.');
       setStatus('error');
     }
   }
@@ -312,7 +337,7 @@ export default function AccountScreen() {
                   >
                     {confirmationLoading
                       ? <ActivityIndicator color="#FFFFFF" />
-                      : <Text className="text-white font-semibold text-base">I&apos;ve confirmed my email</Text>
+                      : <Text className="text-pure-white font-semibold text-base">I&apos;ve confirmed my email</Text>
                     }
                   </Pressable>
                   <Pressable
@@ -356,7 +381,7 @@ export default function AccountScreen() {
                   >
                     {resetLoading
                       ? <ActivityIndicator color="#FFFFFF" />
-                      : <Text className="text-white font-semibold text-base">Send link</Text>
+                      : <Text className="text-pure-white font-semibold text-base">Send link</Text>
                     }
                   </Pressable>
                   <Pressable
@@ -461,7 +486,7 @@ export default function AccountScreen() {
               >
                 {status === 'loading'
                   ? <ActivityIndicator color="#FFFFFF" />
-                  : <Text className="text-white font-semibold text-base">
+                  : <Text className="text-pure-white font-semibold text-base">
                       {tab === 'signin' ? 'Sign in' : 'Create account'}
                     </Text>
                 }

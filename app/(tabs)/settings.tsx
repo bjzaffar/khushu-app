@@ -1,12 +1,13 @@
-import { View, Switch, Pressable, ScrollView, ActivityIndicator, Platform, NativeModules, type LayoutChangeEvent } from 'react-native';
+import { View, Pressable, ScrollView, Modal, ActivityIndicator, InteractionManager, Linking, Platform, NativeModules, type LayoutChangeEvent } from 'react-native';
 import { Text } from '@/components/ui/Typography';
 import { AppDialog, type AppDialogTone } from '@/components/ui/AppDialog';
-import { ArrowRightIcon } from 'react-native-heroicons/outline';
+import { ArrowRightIcon, InformationCircleIcon } from 'react-native-heroicons/outline';
 import { CheckIcon } from 'react-native-heroicons/solid';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ComponentProps } from 'react';
 import { router, useFocusEffect } from 'expo-router';
 import { useScrollToTop } from '@react-navigation/native';
+import { useColorScheme } from 'nativewind';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -32,7 +33,7 @@ import {
   schedulePostSalahPrompts,
   cancelPostSalahReminders,
 } from '@/lib/notifications/notificationService';
-import { CALCULATION_METHODS, type CalculationMethodKey, type AsrMadhab } from '@/types';
+import { CALCULATION_METHODS, type CalculationMethodKey, type AsrMadhab, type PrayerTimes } from '@/types';
 import { WheelPicker } from '@/components/ui/WheelPicker';
 import { clearRevenueCatUser, openRevenueCatCustomerCenter } from '@/lib/revenuecat/service';
 import { resetToAppRoot } from '@/lib/navigation';
@@ -51,9 +52,74 @@ const STAR_GLOW_LAYERS = [
   { strokeWidth: 1.2, strokeOpacity: 0.82 },
 ] as const;
 
+type ImmediateReleasePressableProps = Omit<ComponentProps<typeof Pressable>, 'onPress'> & {
+  onPress: () => void;
+};
+
+function ImmediateReleasePressable({ onPress, onTouchEnd, ...props }: ImmediateReleasePressableProps) {
+  const touchEndTimestampRef = useRef<number | null>(null);
+
+  return (
+    <Pressable
+      {...props}
+      onTouchEnd={(event) => {
+        touchEndTimestampRef.current = event.nativeEvent.timestamp;
+        onTouchEnd?.(event);
+        onPress();
+      }}
+      onPress={(event) => {
+        if (touchEndTimestampRef.current === event.nativeEvent.timestamp) {
+          touchEndTimestampRef.current = null;
+          return;
+        }
+        onPress();
+      }}
+    />
+  );
+}
+
+function ToggleIndicator({ value }: { value: boolean }) {
+  const darkMode = useAppStore((state) => state.darkMode);
+
+  return (
+    <View
+      pointerEvents="none"
+      style={{ width: 50, height: 32, position: 'relative' }}
+    >
+      <View
+        style={{
+          position: 'absolute',
+          left: 7,
+          top: 7,
+          width: 36,
+          height: 18,
+          borderRadius: 9,
+          backgroundColor: value ? '#5A7A5A' : darkMode ? '#292F29' : '#EFE8D8',
+        }}
+      />
+      <View
+        style={{
+          position: 'absolute',
+          left: value ? 25 : 3,
+          top: 5,
+          width: 22,
+          height: 22,
+          borderRadius: 11,
+          backgroundColor: '#FFFFFF',
+          shadowColor: '#000000',
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 0.18,
+          shadowRadius: 1.5,
+          elevation: 2,
+        }}
+      />
+    </View>
+  );
+}
+
 type ToggleRowProps = {
   label: string;
-  description: string;
+  description?: string;
   value: boolean;
   onValueChange: (value: boolean) => void;
   showDivider?: boolean;
@@ -66,26 +132,69 @@ function ToggleRow({
   onValueChange,
   showDivider = false,
 }: ToggleRowProps) {
+  const [isTouched, setIsTouched] = useState(false);
+
   return (
-    <View className={`relative px-5 py-4 flex-row justify-between items-center ${showDivider ? 'border-b border-sand-100' : ''}`}>
-      <Pressable
-        onPress={() => onValueChange(!value)}
-        accessibilityRole="switch"
-        accessibilityLabel={label}
-        accessibilityState={{ checked: value }}
-        className="absolute inset-0 active:bg-sand-100"
-      />
+    <ImmediateReleasePressable
+      onPress={() => onValueChange(!value)}
+      onTouchStart={() => setIsTouched(true)}
+      onTouchEnd={() => setIsTouched(false)}
+      onTouchCancel={() => setIsTouched(false)}
+      accessibilityRole="switch"
+      accessibilityLabel={label}
+      accessibilityState={{ checked: value }}
+      className={`px-5 py-4 flex-row justify-between items-center ${
+        isTouched ? 'bg-sand-100' : ''
+      } ${showDivider ? 'border-b border-sand-100' : ''}`}
+    >
       <View pointerEvents="none" className="flex-1 pr-4">
         <Text className="text-ink-700 font-medium text-sm">{label}</Text>
-        <Text className="text-ink-300 text-xs mt-0.5">{description}</Text>
+        {description && (
+          <Text className="text-ink-300 text-xs mt-0.5">{description}</Text>
+        )}
       </View>
-      <Switch
-        accessible={false}
-        value={value}
-        onValueChange={onValueChange}
-        trackColor={{ false: '#EFE8D8', true: '#5A7A5A' }}
-        thumbColor="#FFFFFF"
-      />
+      <ToggleIndicator value={value} />
+    </ImmediateReleasePressable>
+  );
+}
+
+function ChoiceRow<T extends string>({
+  label,
+  value,
+  options,
+  onValueChange,
+  showDivider = false,
+}: {
+  label: string;
+  value: T;
+  options: { label: string; value: T }[];
+  onValueChange: (value: T) => void;
+  showDivider?: boolean;
+}) {
+  return (
+    <View className={`px-5 py-4 flex-row items-center justify-between gap-x-3 ${showDivider ? 'border-b border-sand-100' : ''}`}>
+      <Text className="text-ink-700 font-medium text-sm flex-1">{label}</Text>
+      <View className="flex-row rounded-xl bg-sand-200 p-1" style={{ width: 160 }}>
+        {options.map((option) => {
+          const selected = option.value === value;
+          return (
+            <ImmediateReleasePressable
+              key={option.value}
+              accessibilityRole="radio"
+              accessibilityState={{ selected }}
+              onPress={() => onValueChange(option.value)}
+              className="flex-1 px-2 py-2 rounded-lg items-center"
+              style={{
+                backgroundColor: selected ? '#5A7A5A' : 'transparent',
+              }}
+            >
+              <Text className={`text-xs font-semibold ${selected ? 'text-pure-white' : 'text-ink-900'}`}>
+                {option.label}
+              </Text>
+            </ImmediateReleasePressable>
+          );
+        })}
+      </View>
     </View>
   );
 }
@@ -218,10 +327,16 @@ function saveSetting(key: string, value: string) {
     .run();
 }
 
+function saveSettingAfterInteraction(key: string, value: string) {
+  InteractionManager.runAfterInteractions(() => saveSetting(key, value));
+}
+
 export default function SettingsScreen() {
   const {
     reminderMinutesBefore, setReminderMinutesBefore,
     postSalahPromptEnabled, setPostSalahPromptEnabled,
+    use24HourTime, setUse24HourTime,
+    darkMode, setDarkMode,
     calculationMethod, setCalculationMethod,
     asrMadhab, setAsrMadhab,
     dndDuringSalah, setDndDuringSalah,
@@ -229,6 +344,7 @@ export default function SettingsScreen() {
     setTodaysPrayerTimes,
     userId,
   } = useAppStore();
+  const { setColorScheme } = useColorScheme();
   const isPremium = useAppStore(selectIsPremium);
 
   const [autoDetectStatus, setAutoDetectStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
@@ -240,11 +356,17 @@ export default function SettingsScreen() {
   const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
   const [showFinalDeleteAccountModal, setShowFinalDeleteAccountModal] = useState(false);
   const [showClearLogsModal, setShowClearLogsModal] = useState(false);
+  const [showFinalClearLogsModal, setShowFinalClearLogsModal] = useState(false);
+  const [showAppInfo, setShowAppInfo] = useState(false);
   const [showDndPermissionDialog, setShowDndPermissionDialog] = useState(false);
   const [feedbackDialog, setFeedbackDialog] = useState<{ title: string; message: string; tone?: AppDialogTone } | null>(null);
   const [signedInEmail, setSignedInEmail] = useState<string | null>(null);
 
   const scrollRef = useRef<ScrollView>(null);
+  const pendingPreScheduleRef = useRef<{ prayerTimes: PrayerTimes; minutesBefore: number } | null>(null);
+  const preScheduleRunningRef = useRef(false);
+  const pendingPostScheduleRef = useRef<{ prayerTimes: PrayerTimes; enabled: boolean } | null>(null);
+  const postScheduleRunningRef = useRef(false);
   useScrollToTop(scrollRef);
 
   // Rehydrate from DB each time tab is focused
@@ -263,6 +385,12 @@ export default function SettingsScreen() {
       const pRow = db.select().from(settings).where(eq(settings.key, 'post_salah_prompt_enabled')).get();
       if (pRow) setPostSalahPromptEnabled(pRow.value !== 'false');
 
+      const timeFormatRow = db.select().from(settings).where(eq(settings.key, 'use_24_hour_time')).get();
+      setUse24HourTime(timeFormatRow?.value === 'true');
+
+      const darkModeRow = db.select().from(settings).where(eq(settings.key, 'dark_mode')).get();
+      setDarkMode(darkModeRow?.value === 'true');
+
       const cRow = db.select().from(settings).where(eq(settings.key, 'calculation_method')).get();
       if (cRow) setCalculationMethod(cRow.value as CalculationMethodKey);
 
@@ -276,6 +404,61 @@ export default function SettingsScreen() {
     }, [])
   );
 
+  async function flushPreScheduleQueue() {
+    if (preScheduleRunningRef.current) return;
+    preScheduleRunningRef.current = true;
+
+    try {
+      while (pendingPreScheduleRef.current) {
+        const pending = pendingPreScheduleRef.current;
+        pendingPreScheduleRef.current = null;
+        try {
+          await schedulePreSalahReminders(pending.prayerTimes, pending.minutesBefore);
+        } catch (error) {
+          console.warn('[notifications] pre-Salah reschedule failed:', error);
+        }
+      }
+    } finally {
+      preScheduleRunningRef.current = false;
+      if (pendingPreScheduleRef.current) void flushPreScheduleQueue();
+    }
+  }
+
+  function queuePreSchedule(prayerTimes: PrayerTimes, minutesBefore: number) {
+    pendingPreScheduleRef.current = { prayerTimes, minutesBefore };
+    InteractionManager.runAfterInteractions(() => {
+      void flushPreScheduleQueue();
+    });
+  }
+
+  async function flushPostScheduleQueue() {
+    if (postScheduleRunningRef.current) return;
+    postScheduleRunningRef.current = true;
+
+    try {
+      while (pendingPostScheduleRef.current) {
+        const pending = pendingPostScheduleRef.current;
+        pendingPostScheduleRef.current = null;
+        try {
+          if (pending.enabled) await schedulePostSalahPrompts(pending.prayerTimes);
+          else await cancelPostSalahReminders();
+        } catch (error) {
+          console.warn('[notifications] post-Salah reschedule failed:', error);
+        }
+      }
+    } finally {
+      postScheduleRunningRef.current = false;
+      if (pendingPostScheduleRef.current) void flushPostScheduleQueue();
+    }
+  }
+
+  function queuePostSchedule(prayerTimes: PrayerTimes, enabled: boolean) {
+    pendingPostScheduleRef.current = { prayerTimes, enabled };
+    InteractionManager.runAfterInteractions(() => {
+      void flushPostScheduleQueue();
+    });
+  }
+
   function recalcAndReschedule(
     method: CalculationMethodKey,
     madhab: AsrMadhab,
@@ -285,10 +468,10 @@ export default function SettingsScreen() {
     if (!coords) return;
     const pt = calculatePrayerTimes(coords, new Date(), method, madhab);
     setTodaysPrayerTimes(pt);
-    schedulePreSalahReminders(pt, mins);
+    queuePreSchedule(pt, mins);
   }
 
-  async function handleMinutesChange(mins: number) {
+  function handleMinutesChange(mins: number) {
     setReminderMinutesBefore(mins);
     saveSetting('reminder_minutes_before', String(mins));
     recalcAndReschedule(calculationMethod, asrMadhab, mins);
@@ -350,13 +533,35 @@ export default function SettingsScreen() {
     }
   }
 
-  async function handlePostSalahToggle(val: boolean) {
+  function handlePostSalahToggle(val: boolean) {
     setPostSalahPromptEnabled(val);
     saveSetting('post_salah_prompt_enabled', String(val));
     if (location) {
       const pt = calculatePrayerTimes(location, new Date(), calculationMethod, asrMadhab);
-      if (val) { await schedulePostSalahPrompts(pt); }
-      else { await cancelPostSalahReminders(); }
+      queuePostSchedule(pt, val);
+    }
+  }
+
+  function handleTimeFormatToggle(val: boolean) {
+    setUse24HourTime(val);
+    saveSettingAfterInteraction('use_24_hour_time', String(val));
+  }
+
+  function handleDarkModeToggle(val: boolean) {
+    // Let the chosen segment paint before updating the global color scheme and
+    // persisting the preference, both of which can take work on the JS thread.
+    setDarkMode(val);
+    InteractionManager.runAfterInteractions(() => {
+      setColorScheme(val ? 'dark' : 'light');
+      saveSetting('dark_mode', String(val));
+    });
+  }
+
+  async function openSupportEmail() {
+    try {
+      await Linking.openURL('mailto:khushu.help@gmail.com');
+    } catch (error) {
+      console.warn('[settings] Could not open support email:', error);
     }
   }
 
@@ -426,8 +631,12 @@ export default function SettingsScreen() {
     setShowDeleteAccountModal(true);
   }
 
+  function closeDeleteAccountFlow() {
+    setShowDeleteAccountModal(false);
+    setShowFinalDeleteAccountModal(false);
+  }
+
   async function confirmSignOut() {
-    setShowSignOutModal(false);
     try {
       await clearNativeGoogleSignInSession().catch((error) =>
         console.warn('[auth] native Google sign-out cleanup failed:', error)
@@ -435,7 +644,7 @@ export default function SettingsScreen() {
       await clearRevenueCatUser();
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
-      resetToAppRoot();
+      router.replace('/onboarding/account');
     } catch (error) {
       console.error('[auth] sign-out failed:', error);
       setFeedbackDialog({
@@ -477,8 +686,19 @@ export default function SettingsScreen() {
     setShowClearLogsModal(true);
   }
 
-  async function confirmClearLogs() {
+  function closeClearLogsFlow() {
     setShowClearLogsModal(false);
+    setShowFinalClearLogsModal(false);
+  }
+
+  function dismissDndPermissionDialog() {
+    setShowDndPermissionDialog(false);
+    setDndDuringSalah(false);
+    saveSetting('dnd_during_salah', 'false');
+  }
+
+  async function confirmClearLogs() {
+    closeClearLogsFlow();
     try {
       await clearLogsEverywhere();
     } catch (error) {
@@ -493,7 +713,46 @@ export default function SettingsScreen() {
   return (
     <SafeAreaView className="flex-1 bg-sand-100">
       <ScrollView ref={scrollRef} className="flex-1" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 }} scrollEnabled={!wheelActive}>
-        <Text className="text-2xl font-semibold text-ink-900 mb-6">Settings</Text>
+        <View className="flex-row items-center justify-between mb-6">
+          <Text className="text-2xl font-semibold text-ink-900">Settings</Text>
+          <Pressable
+            onPress={() => setShowAppInfo(true)}
+            accessibilityRole="button"
+            accessibilityLabel="How to use Khushu"
+            hitSlop={8}
+            className="w-10 h-10 rounded-full items-center justify-center active:bg-sand-200"
+          >
+            <InformationCircleIcon size={23} color="#9B9189" />
+          </Pressable>
+        </View>
+
+        {/* ── General ──────────────────────────────────────────────────────── */}
+        <View className="mb-6">
+          <Text className="text-xs font-medium text-ink-300 uppercase tracking-widest mb-3">
+            General
+          </Text>
+          <View className="bg-white rounded-2xl border border-sand-200 overflow-hidden">
+            <ChoiceRow
+              label="Theme"
+              value={darkMode ? 'dark' : 'light'}
+              options={[
+                { label: 'Light', value: 'light' },
+                { label: 'Dark', value: 'dark' },
+              ]}
+              onValueChange={(value) => handleDarkModeToggle(value === 'dark')}
+              showDivider
+            />
+            <ChoiceRow
+              label="Time display"
+              value={use24HourTime ? '24-hour' : 'am-pm'}
+              options={[
+                { label: 'AM/PM', value: 'am-pm' },
+                { label: '24-hour', value: '24-hour' },
+              ]}
+              onValueChange={(value) => handleTimeFormatToggle(value === '24-hour')}
+            />
+          </View>
+        </View>
 
         {/* ── Location ─────────────────────────────────────────────────────── */}
         <View className="mb-6">
@@ -673,10 +932,10 @@ export default function SettingsScreen() {
                   asrMadhab === 'Shafi' ? 'bg-sage-600' : 'bg-sand-100'
                 }`}
               >
-                <Text className={`text-sm font-semibold ${asrMadhab === 'Shafi' ? 'text-white' : 'text-ink-700'}`}>
+                <Text className={`text-sm font-semibold ${asrMadhab === 'Shafi' ? 'text-pure-white' : 'text-ink-700'}`}>
                   Earlier Asr
                 </Text>
-                <Text className={`text-xs mt-0.5 text-center ${asrMadhab === 'Shafi' ? 'text-white opacity-80' : 'text-ink-300'}`}>
+                <Text className={`text-xs mt-0.5 text-center ${asrMadhab === 'Shafi' ? 'text-pure-white opacity-80' : 'text-ink-300'}`}>
                   Shafi&apos;i, Maliki & Hanbali
                 </Text>
               </Pressable>
@@ -686,10 +945,10 @@ export default function SettingsScreen() {
                   asrMadhab === 'Hanafi' ? 'bg-sage-600' : 'bg-sand-100'
                 }`}
               >
-                <Text className={`text-sm font-semibold ${asrMadhab === 'Hanafi' ? 'text-white' : 'text-ink-700'}`}>
+                <Text className={`text-sm font-semibold ${asrMadhab === 'Hanafi' ? 'text-pure-white' : 'text-ink-700'}`}>
                   Later Asr
                 </Text>
-                <Text className={`text-xs mt-0.5 text-center ${asrMadhab === 'Hanafi' ? 'text-white opacity-80' : 'text-ink-300'}`}>
+                <Text className={`text-xs mt-0.5 text-center ${asrMadhab === 'Hanafi' ? 'text-pure-white opacity-80' : 'text-ink-300'}`}>
                   Hanafi
                 </Text>
               </Pressable>
@@ -744,7 +1003,7 @@ export default function SettingsScreen() {
                     </Text>
                   </View>
                   <View className="bg-sage-600 rounded-full px-3 py-1">
-                    <Text className="text-white text-xs font-semibold">Active</Text>
+                    <Text className="text-pure-white text-xs font-semibold">Active</Text>
                   </View>
                 </View>
                 <Pressable
@@ -819,12 +1078,99 @@ export default function SettingsScreen() {
 
         {/* ── Version (hidden debug entry) ────────────────────────────────── */}
         <View className="items-center py-4">
-          <Text className="text-ink-300 text-xs">Khushu App v1.1.2</Text>
+          <Text className="text-ink-300 text-xs">Khushu v1.3.0</Text>
         </View>
 
       </ScrollView>
 
       {/* ── Sign Out Confirmation Modal ────────────────────────────────── */}
+      <Modal
+        visible={showAppInfo}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        navigationBarTranslucent
+        onRequestClose={() => setShowAppInfo(false)}
+      >
+        <View className="flex-1 items-center justify-center px-5 py-8">
+          <Pressable
+            accessibilityRole="none"
+            className="absolute inset-0 bg-black/40"
+            onPress={() => setShowAppInfo(false)}
+          />
+          <View
+            accessibilityViewIsModal
+            className="bg-white border border-sand-200 rounded-3xl px-6 pt-6 pb-5 w-full max-w-sm"
+            style={{
+              height: '65%',
+              shadowColor: '#1A1917',
+              shadowOffset: { width: 0, height: 12 },
+              shadowOpacity: 0.16,
+              shadowRadius: 24,
+              elevation: 12,
+            }}
+          >
+            <ScrollView
+              showsVerticalScrollIndicator
+              style={{ flex: 1 }}
+              contentContainerStyle={{ paddingRight: 10, paddingBottom: 4 }}
+            >
+              <View className="flex-row items-center mb-5">
+                <View className="w-12 h-12 rounded-full bg-sand-100 items-center justify-center mr-3">
+                  <InformationCircleIcon size={25} color="#5A7A5A" />
+                </View>
+                <Text className="text-ink-900 text-lg font-semibold flex-1">How Khushu works</Text>
+              </View>
+
+              <View className="bg-sand-100 rounded-2xl p-4 mb-3">
+                <Text className="text-sage-600 text-sm font-semibold mb-1">Reminders before salah</Text>
+                <Text className="text-ink-700 text-sm leading-relaxed">
+                  From Home, tap a Salah to enter Salah Mode. Your pre-Salah reminder appears there to help you settle before you begin.
+                </Text>
+              </View>
+
+              <View className="bg-sand-100 rounded-2xl p-4 mb-3">
+                <Text className="text-sage-600 text-sm font-semibold mb-1">Built from your patterns</Text>
+                <Text className="text-ink-700 text-sm leading-relaxed">
+                  After a Salah has a few logs, Khushu can begin to spot patterns. When one distraction appears most often, your pre-Salah reminder becomes more specific to that distraction.
+                </Text>
+              </View>
+
+              <View className="bg-sand-100 rounded-2xl p-4 mb-3">
+                <Text className="text-sage-600 text-sm font-semibold mb-2">Custom distractions</Text>
+                <Text className="text-ink-700 text-sm leading-relaxed mb-2">
+                  Free: if a custom distraction becomes your top distraction, Khushu names it in the reminder but uses a general prompt.
+                </Text>
+                <Text className="text-ink-700 text-sm leading-relaxed">
+                  Premium: Khushu uses an AI-generated reminder tailored to that custom distraction, based on verified content.
+                </Text>
+              </View>
+
+              <View className="bg-sand-100 rounded-2xl p-4">
+                <Text className="text-sage-600 text-sm font-semibold mb-1">Contact us</Text>
+                <Text className="text-ink-700 text-sm leading-relaxed">
+                  Help? Feature request? Bug report? Contact us at{' '}
+                  <Text
+                    accessibilityRole="link"
+                    onPress={() => void openSupportEmail()}
+                    className="text-sage-600 font-semibold"
+                  >
+                    khushu.help@gmail.com
+                  </Text>
+                </Text>
+              </View>
+            </ScrollView>
+
+            <Pressable
+              onPress={() => setShowAppInfo(false)}
+              className="mt-5 min-h-12 py-3 rounded-2xl bg-sage-600 active:bg-sage-700 items-center justify-center"
+            >
+              <Text className="text-pure-white text-sm font-semibold">Got it</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
       <AppDialog
         visible={showSignOutModal}
         title="Sign out?"
@@ -843,9 +1189,9 @@ export default function SettingsScreen() {
         title="Delete account?"
         message="This will permanently delete your account. Your locally stored logs will remain on this device, but your account and cloud data will be gone forever."
         tone="destructive"
-        onDismiss={() => setShowDeleteAccountModal(false)}
+        onDismiss={closeDeleteAccountFlow}
         actions={[
-          { label: 'Cancel', tone: 'secondary', onPress: () => setShowDeleteAccountModal(false) },
+          { label: 'Cancel', tone: 'secondary', onPress: closeDeleteAccountFlow },
           {
             label: 'Delete',
             tone: 'destructive',
@@ -863,9 +1209,9 @@ export default function SettingsScreen() {
         title="Permanently delete account?"
         message="This cannot be undone."
         tone="destructive"
-        onDismiss={() => setShowFinalDeleteAccountModal(false)}
+        onDismiss={closeDeleteAccountFlow}
         actions={[
-          { label: 'Cancel', tone: 'secondary', onPress: () => setShowFinalDeleteAccountModal(false) },
+          { label: 'Cancel', tone: 'secondary', onPress: closeDeleteAccountFlow },
           { label: 'Delete account', tone: 'destructive', onPress: confirmDeleteAccount },
         ]}
       />
@@ -873,12 +1219,31 @@ export default function SettingsScreen() {
       <AppDialog
         visible={showClearLogsModal}
         title="Clear all log history?"
-        message="This will permanently delete all your logged salah reflections. This cannot be undone."
+        message="This will permanently delete all your logged salah reflections."
         tone="destructive"
-        onDismiss={() => setShowClearLogsModal(false)}
+        onDismiss={closeClearLogsFlow}
         actions={[
-          { label: 'Cancel', tone: 'secondary', onPress: () => setShowClearLogsModal(false) },
-          { label: 'Clear', tone: 'destructive', onPress: confirmClearLogs },
+          { label: 'Cancel', tone: 'secondary', onPress: closeClearLogsFlow },
+          {
+            label: 'Clear',
+            tone: 'destructive',
+            onPress: () => {
+              setShowClearLogsModal(false);
+              setShowFinalClearLogsModal(true);
+            },
+          },
+        ]}
+      />
+
+      <AppDialog
+        visible={showFinalClearLogsModal}
+        title="Permanently clear all log history?"
+        message="This cannot be undone."
+        tone="destructive"
+        onDismiss={closeClearLogsFlow}
+        actions={[
+          { label: 'Cancel', tone: 'secondary', onPress: closeClearLogsFlow },
+          { label: 'Clear log history', tone: 'destructive', onPress: confirmClearLogs },
         ]}
       />
 
@@ -887,16 +1252,12 @@ export default function SettingsScreen() {
         title="Allow Do Not Disturb access"
         message="Android requires this special access before Khushu can silence your phone. On the next screen, enable Khushu, then return to the app."
         tone="info"
-        dismissOnBackdrop={false}
+        onDismiss={dismissDndPermissionDialog}
         actions={[
           {
             label: 'Cancel',
             tone: 'secondary',
-            onPress: () => {
-              setShowDndPermissionDialog(false);
-              setDndDuringSalah(false);
-              saveSetting('dnd_during_salah', 'false');
-            },
+            onPress: dismissDndPermissionDialog,
           },
           { label: 'Open settings', onPress: () => void openDndAccessSettings() },
         ]}

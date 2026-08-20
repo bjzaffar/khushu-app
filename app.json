@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/images/khushu-app-icon.png",
     "scheme": "khushuai",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/images/khushu-logo.png",
       "resizeMode": "contain",

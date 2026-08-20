@@ -49,6 +49,7 @@ type PaywallDialog = {
   message: string;
   tone: AppDialogTone;
   closePaywall: boolean;
+  showIcon?: boolean;
 };
 
 const premiumFeatures = [
@@ -208,6 +209,7 @@ export default function PaywallScreen() {
           : 'This store account has no active Khushu subscription.',
         tone: restored ? 'success' : 'info',
         closePaywall: restored,
+        showIcon: false,
       });
     } catch (error) {
       console.warn('[revenuecat] restore failed:', error);
@@ -308,7 +310,7 @@ export default function PaywallScreen() {
             >
               {workingAction === 'manage'
                 ? <ActivityIndicator color="#FFFFFF" />
-                : <Text className="text-white font-semibold text-base">Manage subscription</Text>}
+                : <Text className="text-pure-white font-semibold text-base">Manage subscription</Text>}
             </Pressable>
           </View>
         ) : loadState === 'loading' || (userId && premiumStatus === 'unknown') ? (
@@ -324,7 +326,7 @@ export default function PaywallScreen() {
               onPress={loadOffering}
               className="bg-sage-600 py-3.5 rounded-2xl items-center self-stretch active:bg-sage-700"
             >
-              <Text className="text-white font-semibold text-sm">Try again</Text>
+              <Text className="text-pure-white font-semibold text-sm">Try again</Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
@@ -371,7 +373,7 @@ export default function PaywallScreen() {
                         <Text className="text-ink-700 font-semibold text-base">{packageTitle(aPackage)}</Text>
                         {savings !== null && (
                           <View className="bg-sage-600 rounded-full px-2 py-0.5">
-                            <Text className="text-white text-xs font-semibold">Save {savings}%</Text>
+                            <Text className="text-pure-white text-xs font-semibold">Save {savings}%</Text>
                           </View>
                         )}
                       </View>
@@ -408,7 +410,7 @@ export default function PaywallScreen() {
             >
               {workingAction === 'purchase' ? <ActivityIndicator color="#FFFFFF" /> : (
                 <Text className={`font-semibold text-base ${
-                  selectedPackage && (!userId || hasLegalLinks) ? 'text-white' : 'text-ink-300'
+                  selectedPackage && (!userId || hasLegalLinks) ? 'text-pure-white' : 'text-ink-300'
                 }`}>
                   {!userId
                     ? 'Sign in to subscribe'
@@ -471,7 +473,8 @@ export default function PaywallScreen() {
         title={dialog?.title ?? ''}
         message={dialog?.message ?? ''}
         tone={dialog?.tone}
-        dismissOnBackdrop={false}
+        showIcon={dialog?.showIcon}
+        onDismiss={() => setDialog(null)}
         actions={[{
           label: dialog?.closePaywall ? 'Continue' : 'OK',
           onPress: () => {

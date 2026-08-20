@@ -5,6 +5,7 @@ import {
   InformationCircleIcon,
 } from 'react-native-heroicons/outline';
 import { Text } from './Typography';
+import { useThemeColors } from '@/lib/theme/colors';
 
 export type AppDialogTone = 'info' | 'success' | 'warning' | 'destructive';
 export type AppDialogActionTone = 'primary' | 'secondary' | 'destructive';
@@ -24,8 +25,8 @@ type AppDialogProps = {
   actions: AppDialogAction[];
   actionLayout?: 'auto' | 'horizontal' | 'vertical';
   tone?: AppDialogTone;
-  onDismiss?: () => void;
-  dismissOnBackdrop?: boolean;
+  onDismiss: () => void;
+  showIcon?: boolean;
 };
 
 const toneStyles = {
@@ -36,9 +37,9 @@ const toneStyles = {
 } as const;
 
 const actionStyles: Record<AppDialogActionTone, { button: string; text: string; spinner: string }> = {
-  primary: { button: 'bg-sage-600 active:bg-sage-700', text: 'text-white', spinner: '#FFFFFF' },
+  primary: { button: 'bg-sage-600 active:bg-sage-700', text: 'text-pure-white', spinner: '#FFFFFF' },
   secondary: { button: 'bg-sand-200 active:bg-sand-300', text: 'text-ink-700', spinner: '#3A3633' },
-  destructive: { button: 'bg-red-500 active:opacity-80', text: 'text-white', spinner: '#FFFFFF' },
+  destructive: { button: 'bg-red-500 active:opacity-80', text: 'text-pure-white', spinner: '#FFFFFF' },
 };
 
 export function AppDialog({
@@ -49,8 +50,9 @@ export function AppDialog({
   actionLayout = 'auto',
   tone = 'info',
   onDismiss,
-  dismissOnBackdrop = true,
+  showIcon = true,
 }: AppDialogProps) {
+  const theme = useThemeColors();
   const { Icon, icon, circle } = toneStyles[tone];
   const horizontalActions = actionLayout === 'horizontal'
     || (actionLayout === 'auto' && actions.length === 2);
@@ -67,7 +69,7 @@ export function AppDialog({
       <Pressable
         accessibilityRole="none"
         className="flex-1 bg-black/40 items-center justify-center px-6"
-        onPress={dismissOnBackdrop ? onDismiss : undefined}
+        onPress={onDismiss}
       >
         <Pressable
           accessibilityViewIsModal
@@ -81,9 +83,11 @@ export function AppDialog({
           }}
           onPress={(event) => event.stopPropagation()}
         >
-          <View className={`w-12 h-12 rounded-full ${circle} items-center justify-center self-center mb-4`}>
-            <Icon size={24} color={icon} />
-          </View>
+          {showIcon && (
+            <View className={`w-12 h-12 rounded-full ${circle} items-center justify-center self-center mb-4`}>
+              <Icon size={24} color={icon} />
+            </View>
+          )}
 
           <Text className="text-ink-900 text-lg font-semibold text-center mb-2">
             {title}
@@ -106,7 +110,7 @@ export function AppDialog({
                   className={`${horizontalActions ? 'flex-1' : 'w-full'} min-h-12 px-3 py-3 rounded-2xl items-center justify-center ${styles.button} ${action.disabled ? 'opacity-50' : ''}`}
                 >
                   {action.loading
-                    ? <ActivityIndicator color={styles.spinner} />
+                    ? <ActivityIndicator color={actionTone === 'secondary' ? theme.textSecondary : styles.spinner} />
                     : <Text className={`${styles.text} text-sm font-semibold text-center`}>{action.label}</Text>}
                 </Pressable>
               );

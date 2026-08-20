@@ -77,15 +77,16 @@ export function getNextSalah(
   return null;
 }
 
-/**
- * Format a prayer time for display, e.g. "5:32 AM"
- */
-export function formatPrayerTime(date: Date): string {
-  return date.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  });
+/** Format a prayer time for display, e.g. "5:32 AM" or "17:32". */
+export function formatPrayerTime(date: Date, use24HourTime = false): string {
+  const hours = date.getHours();
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+
+  if (use24HourTime) return `${String(hours).padStart(2, '0')}:${minutes}`;
+
+  const period = hours >= 12 ? 'PM' : 'AM';
+  const twelveHour = hours % 12 || 12;
+  return `${twelveHour}:${minutes} ${period}`;
 }
 
 /**

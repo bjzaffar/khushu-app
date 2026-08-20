@@ -1,11 +1,13 @@
 import { useEffect, useRef } from 'react';
 import { View, Animated, Easing, Image } from 'react-native';
+import { useThemeColors } from '@/lib/theme/colors';
 
 interface SplashScreenProps {
   onFinish: () => void;
 }
 
 export default function SplashScreen({ onFinish }: SplashScreenProps) {
+  const theme = useThemeColors();
   const progress = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -35,7 +37,7 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
   });
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#F9F5EE', justifyContent: 'center', alignItems: 'center' }}>
+    <View style={{ flex: 1, backgroundColor: theme.background, justifyContent: 'center', alignItems: 'center' }}>
       <Image
         source={require('../assets/images/khushu-logo.png')}
         style={{ width: 200, height: 200, borderRadius: 40 }}

@@ -25,6 +25,7 @@ import {
   type DistractionKey,
   type ReminderType,
 } from '@/types';
+import { useThemeColors } from '@/lib/theme/colors';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -53,21 +54,26 @@ interface InsightsData {
 
 // ── Colour tokens (raw values — NativeWind not available for inline styles) ──
 
-const C = {
-  sage: '#5A7A5A',
-  sand100: '#EFE8D8',
-  sand200: '#D9D0C0',
-  ink300: '#9B9189',
-  ink400: '#7D756D',
-  ink700: '#2E2B28',
-  white: '#FFFFFF',
-};
+function useInsightColors() {
+  const theme = useThemeColors();
+  return {
+    sage: '#5A7A5A',
+    sand100: theme.surfaceMuted,
+    sand200: theme.borderStrong,
+    ink300: '#9B9189',
+    ink400: '#7D756D',
+    ink700: theme.textSecondary,
+    surface: theme.surface,
+    white: '#FFFFFF',
+  };
+}
 
 // ── Bar ───────────────────────────────────────────────────────────────────────
 
 function Bar({ pct, height = 8 }: { pct: number; height?: number }) {
+  const C = useInsightColors();
   return (
-    <View style={{ height, backgroundColor: '#EFE8D8', borderRadius: height / 2 }}>
+    <View style={{ height, backgroundColor: C.sand100, borderRadius: height / 2 }}>
       <View
         style={{
           width: `${Math.max(2, pct)}%`,
@@ -170,6 +176,7 @@ function KhushuChart({
   timeframe: ChartTimeframe;
   isAllSalah: boolean;
 }) {
+  const C = useInsightColors();
   const [cw, setCw] = useState(0);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const DOT = 4;
@@ -362,6 +369,7 @@ function Dropdown<T extends string>({
   lockedValues?: Set<T>;
   onLockedPress?: () => void;
 }) {
+  const C = useInsightColors();
   const [open, setOpen] = useState(false);
   const currentLabel = options.find((o) => o.value === value)?.label ?? value;
 
@@ -419,7 +427,7 @@ function Dropdown<T extends string>({
           >
             <View
               style={{
-                backgroundColor: C.white,
+                backgroundColor: C.surface,
                 borderRadius: 24,
                 borderWidth: 1,
                 borderColor: C.sand200,
@@ -514,6 +522,7 @@ function Dropdown<T extends string>({
 // ── SalahInsightCard ──────────────────────────────────────────────────────────
 
 function SalahInsightCard({ item, isLast }: { item: SalahInsight; isLast: boolean }) {
+  const C = useInsightColors();
   return (
     <View
       style={{
@@ -561,6 +570,7 @@ const TIMEFRAME_OPTIONS: { value: '7' | '30' | '90' | 'all'; label: string }[] =
 // ── InsightsScreen ────────────────────────────────────────────────────────────
 
 export default function InsightsScreen() {
+  const C = useInsightColors();
   const isPremium = useAppStore(selectIsPremium);
   const [data, setData] = useState<InsightsData | null>(null);
   const [chartPoints, setChartPoints] = useState<LogChartPoint[]>([]);
