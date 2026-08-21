@@ -1,4 +1,5 @@
 import {
+  InteractionManager,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -21,7 +22,7 @@ import {
 } from 'react-native-heroicons/solid';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '@/store/appStore';
 import {
   DISTRACTION_LABELS,
@@ -47,6 +48,7 @@ import { salahLogs, settings } from '@/db/schema';
 import { eq, inArray } from 'drizzle-orm';
 import {
   requestNotificationPermissions,
+  cancelPostSalahReminders,
   schedulePostSalahPrompts,
   schedulePreSalahReminders,
   setupNotificationChannel,
@@ -155,6 +157,7 @@ export default function HomeScreen() {
     asrMadhab,
     reminderMinutesBefore,
     postSalahPromptEnabled,
+    setPostSalahPromptEnabled,
     use24HourTime,
     startSalahMode,
     homeTabReselectionVersion,
@@ -174,7 +177,7 @@ export default function HomeScreen() {
   const hasScheduledInitialReminders = useRef(false);
   const lastHomeTabReselection = useRef(homeTabReselectionVersion);
 
-  const now = new Date();
+  const [now, setNow] = useState(() => new Date());
   const today = localCalendarDate(now);
   const selectedDateKey = toLocalDateKey(selectedDate);
   const isToday = selectedDateKey === toLocalDateKey(today);
@@ -197,24 +200,45 @@ export default function HomeScreen() {
 
     async function requestInitialNotificationPermission() {
       await setupNotificationChannel();
-      setNotificationsGranted(await requestNotificationPermissions());
+      const granted = await requestNotificationPermissions();
+      setNotificationsGranted(granted);
+      if (!granted) {
+        setPostSalahPromptEnabled(false);
+        db.insert(settings)
+          .values({ key: 'post_salah_prompt_enabled', value: 'false' })
+          .onConflictDoUpdate({ target: settings.key, set: { value: 'false' } })
+          .run();
+        await cancelPostSalahReminders();
+      }
     }
 
     requestInitialNotificationPermission().catch((error) =>
       console.warn('[notifications] initial permission request failed:', error)
     );
-  }, [isDbReady, showSignInSuccess, showSignInSuccessNotice]);
+  }, [isDbReady, setPostSalahPromptEnabled, showSignInSuccess, showSignInSuccessNotice]);
 
-  useEffect(() => {
-    if (!showSignInSuccessNotice) return;
+  // On a first sign-in, Home mounts while the root navigator is still
+  // transitioning away from onboarding. Wait until Home is focused and that
+  // transition has completed before showing (and timing) the confirmation.
+  useFocusEffect(
+    useCallback(() => {
+      if (!showSignInSuccessNotice) return;
 
-    setShowSignInSuccess(true);
-    const timeout = setTimeout(() => {
-      setShowSignInSuccess(false);
-      clearSignInSuccessNotice();
-    }, 1000);
-    return () => clearTimeout(timeout);
-  }, [clearSignInSuccessNotice, showSignInSuccessNotice]);
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      const task = InteractionManager.runAfterInteractions(() => {
+        setShowSignInSuccess(true);
+        timeout = setTimeout(() => {
+          setShowSignInSuccess(false);
+          clearSignInSuccessNotice();
+        }, 1000);
+      });
+
+      return () => {
+        task.cancel();
+        if (timeout) clearTimeout(timeout);
+      };
+    }, [clearSignInSuccessNotice, showSignInSuccessNotice])
+  );
 
   useEffect(() => {
     if (!notificationsGranted || !todaysPrayerTimes || hasScheduledInitialReminders.current) return;
@@ -252,6 +276,17 @@ export default function HomeScreen() {
         setSelectedDate(todayOnBlur);
         setSelectedLogs(loadHomeLogs(toLocalDateKey(todayOnBlur)));
       };
+    }, [])
+  );
+
+  // Keep the active Salah state in sync when a prayer window opens or closes,
+  // including the Fajr-to-sunrise boundary.
+  useFocusEffect(
+    useCallback(() => {
+      const refreshNow = () => setNow(new Date());
+      refreshNow();
+      const interval = setInterval(refreshNow, 30_000);
+      return () => clearInterval(interval);
     }, [])
   );
 
@@ -376,17 +411,21 @@ export default function HomeScreen() {
                 : loggedSet.has(name) ? 'logged' : 'historical';
               const log = selectedLogs[name];
               return (
-                <SalahCard
-                  key={name}
-                  name={name}
-                  time={formatPrayerTime(selectedPrayerTimes[name], use24HourTime)}
-                  status={status}
-                  rating={log?.rating}
-                  distraction={log?.distraction}
-                  note={log?.note}
-                  onPress={() => handleSalahPress(name, status)}
-                  onNotePress={log?.note ? () => showNote(name, log.note!) : undefined}
-                />
+                <Fragment key={name}>
+                  <SalahCard
+                    name={name}
+                    time={formatPrayerTime(selectedPrayerTimes[name], use24HourTime)}
+                    status={status}
+                    rating={log?.rating}
+                    distraction={log?.distraction}
+                    note={log?.note}
+                    onPress={() => handleSalahPress(name, status)}
+                    onNotePress={log?.note ? () => showNote(name, log.note!) : undefined}
+                  />
+                  {name === 'fajr' && (
+                    <SunriseDivider time={formatPrayerTime(selectedPrayerTimes.sunrise, use24HourTime)} />
+                  )}
+                </Fragment>
               );
             })}
           </View>
@@ -535,6 +574,16 @@ export default function HomeScreen() {
         </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
+  );
+}
+
+function SunriseDivider({ time }: { time: string }) {
+  return (
+    <View className="flex-row items-center py-1" accessibilityLabel={`Sunrise at ${time}`}>
+      <View className="flex-1 h-px bg-ink-300" />
+      <Text className="px-3 text-ink-300 text-xs">Sunrise at {time}</Text>
+      <View className="flex-1 h-px bg-ink-300" />
+    </View>
   );
 }
 

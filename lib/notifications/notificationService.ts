@@ -92,7 +92,8 @@ export async function schedulePreSalahReminders(
 
 /**
  * Schedule a post-Salah prompt for each prayer.
- * Fires when the prayer window closes (= next prayer's start time).
+ * Fires when the prayer window closes (= the next prayer's start time, except
+ * Fajr, which ends at sunrise).
  * For Isha, fires 90 minutes after Isha starts.
  * Cancel a specific one immediately after the user logs that Salah.
  */
@@ -115,7 +116,7 @@ export async function schedulePostSalahPrompts(
   const alreadyLogged = getLoggedToday();
 
   const windowClose: [SalahName, Date][] = [
-    ['fajr',    prayerTimes.dhuhr],
+    ['fajr',    prayerTimes.sunrise],
     ['dhuhr',   prayerTimes.asr],
     ['asr',     prayerTimes.maghrib],
     ['maghrib', prayerTimes.isha],

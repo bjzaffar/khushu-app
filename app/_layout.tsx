@@ -17,7 +17,7 @@ import {
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { eq } from 'drizzle-orm';
-import { selectIsPremium, useAppStore } from '@/store/appStore';
+import { selectIsPremium, type ThemePreference, useAppStore } from '@/store/appStore';
 import { initDatabase, db } from '@/db/database';
 import { settings } from '@/db/schema';
 import * as SecureStore from 'expo-secure-store';
@@ -44,7 +44,7 @@ import {
   identifyRevenueCatUser,
   refreshPremiumStatus,
 } from '@/lib/revenuecat/service';
-import { getThemeColors } from '@/lib/theme/colors';
+import { getThemeColors, shouldUseDarkAutoTheme } from '@/lib/theme/colors';
 
 // Capture the deep link URL IMMEDIATELY at module scope — before any async init blocks the navigator.
 // Without this, release builds lose the URL because the callback screen can't mount until
@@ -52,6 +52,21 @@ import { getThemeColors } from '@/lib/theme/colors';
 Linking.getInitialURL().then(setPendingUrl).catch(() => {});
 
 SplashScreen.preventAutoHideAsync();
+
+const STARTUP_SESSION_TIMEOUT_MS = 1_500;
+
+/**
+ * Supabase session recovery refreshes expired tokens over the network. That
+ * must never hold the splash screen open when the device is offline.
+ */
+async function getStartupSession() {
+  return Promise.race([
+    supabase.auth.getSession(),
+    new Promise<{ data: { session: null } }>((resolve) => {
+      setTimeout(() => resolve({ data: { session: null } }), STARTUP_SESSION_TIMEOUT_MS);
+    }),
+  ]);
+}
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
@@ -71,9 +86,14 @@ export default function RootLayout() {
     setReminderMinutesBefore,
     setPostSalahPromptEnabled,
     setUse24HourTime,
+    location,
     darkMode,
     setDarkMode,
+    themePreference,
+    setThemePreference,
+    calculationMethod,
     setCalculationMethod,
+    asrMadhab,
     setAsrMadhab,
     setDndDuringSalah,
     startSalahMode,
@@ -97,8 +117,10 @@ export default function RootLayout() {
         const onboardingVal = await SecureStore.getItemAsync('onboarding_complete');
         let onboardingComplete = onboardingVal === 'true';
 
-        // Rehydrate Supabase session
-        const { data: { session } } = await supabase.auth.getSession();
+        // Rehydrate Supabase session without waiting indefinitely for an
+        // offline token refresh. The auth listener reconciles the identity
+        // later once Supabase becomes available again.
+        const { data: { session } } = await getStartupSession();
         if (session?.user && !onboardingComplete) {
           await SecureStore.setItemAsync('onboarding_complete', 'true');
           onboardingComplete = true;
@@ -109,8 +131,31 @@ export default function RootLayout() {
         // Resolve the app-selected theme before revealing any React Native
         // surfaces. Otherwise Android's system theme can render the first frame
         // and then be replaced by the persisted app theme after navigation mounts.
+        const themePreferenceRow = db.select().from(settings).where(eq(settings.key, 'theme_preference')).get();
         const darkModeRow = db.select().from(settings).where(eq(settings.key, 'dark_mode')).get();
-        const persistedDarkMode = darkModeRow?.value === 'true';
+        const savedThemePreference = themePreferenceRow?.value;
+        const persistedThemePreference: ThemePreference = (
+          savedThemePreference === 'auto' || savedThemePreference === 'light' || savedThemePreference === 'dark'
+        ) ? savedThemePreference : darkModeRow?.value === 'true' ? 'dark' : 'light';
+
+        let persistedDarkMode = persistedThemePreference === 'dark';
+        if (persistedThemePreference === 'auto') {
+          const latRow = db.select().from(settings).where(eq(settings.key, 'location_lat')).get();
+          const lngRow = db.select().from(settings).where(eq(settings.key, 'location_lng')).get();
+          if (latRow && lngRow) {
+            const methodRow = db.select().from(settings).where(eq(settings.key, 'calculation_method')).get();
+            const madhabRow = db.select().from(settings).where(eq(settings.key, 'asr_madhab')).get();
+            const prayerTimes = calculatePrayerTimes(
+              { latitude: parseFloat(latRow.value), longitude: parseFloat(lngRow.value) },
+              new Date(),
+              (methodRow?.value ?? 'MuslimWorldLeague') as CalculationMethodKey,
+              (madhabRow?.value ?? 'Shafi') as AsrMadhab,
+            );
+            persistedDarkMode = shouldUseDarkAutoTheme(prayerTimes);
+          }
+        }
+
+        setThemePreference(persistedThemePreference);
         setColorScheme(persistedDarkMode ? 'dark' : 'light');
         setDarkMode(persistedDarkMode);
         setIsHydrated(true);
@@ -239,6 +284,33 @@ export default function RootLayout() {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  // Auto follows the locally calculated daylight window and is re-evaluated
+  // after returning to the foreground as well as while the app remains open.
+  useEffect(() => {
+    if (themePreference !== 'auto') return;
+
+    const applyAutoTheme = () => {
+      const resolvedDarkMode = location
+        ? shouldUseDarkAutoTheme(calculatePrayerTimes(location, new Date(), calculationMethod, asrMadhab))
+        : false;
+      if (useAppStore.getState().darkMode !== resolvedDarkMode) {
+        setDarkMode(resolvedDarkMode);
+        setColorScheme(resolvedDarkMode ? 'dark' : 'light');
+      }
+    };
+
+    applyAutoTheme();
+    const interval = setInterval(applyAutoTheme, 30_000);
+    const appStateSubscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') applyAutoTheme();
+    });
+
+    return () => {
+      clearInterval(interval);
+      appStateSubscription.remove();
+    };
+  }, [asrMadhab, calculationMethod, location, setColorScheme, setDarkMode, themePreference]);
 
   useEffect(() => {
     if (isHydrated && (fontsLoaded || fontError)) {

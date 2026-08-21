@@ -1,4 +1,5 @@
 import { useAppStore } from '@/store/appStore';
+import type { PrayerTimes } from '@/types';
 
 const lightColors = {
   background: '#F9F5EE',
@@ -34,6 +35,11 @@ const darkColors: ThemeColors = {
 
 export function getThemeColors(darkMode: boolean): ThemeColors {
   return darkMode ? darkColors : lightColors;
+}
+
+/** Auto theme is dark from Maghrib until sunrise, and light during daylight. */
+export function shouldUseDarkAutoTheme(prayerTimes: PrayerTimes, now: Date = new Date()): boolean {
+  return now >= prayerTimes.maghrib || now < prayerTimes.sunrise;
 }
 
 export function useThemeColors(): ThemeColors {

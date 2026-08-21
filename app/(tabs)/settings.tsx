@@ -1,4 +1,4 @@
-import { View, Pressable, ScrollView, Modal, ActivityIndicator, InteractionManager, Linking, Platform, NativeModules, type LayoutChangeEvent } from 'react-native';
+import { AppState, View, Pressable, ScrollView, Modal, ActivityIndicator, InteractionManager, Linking, Platform, NativeModules, type LayoutChangeEvent } from 'react-native';
 import { Text } from '@/components/ui/Typography';
 import { AppDialog, type AppDialogTone } from '@/components/ui/AppDialog';
 import { ArrowRightIcon, InformationCircleIcon } from 'react-native-heroicons/outline';
@@ -19,7 +19,8 @@ import Animated, {
 import Svg, { G, Rect } from 'react-native-svg';
 import { eq } from 'drizzle-orm';
 import * as Location from 'expo-location';
-import { selectIsPremium, useAppStore } from '@/store/appStore';
+import * as Notifications from 'expo-notifications';
+import { selectIsPremium, type ThemePreference, useAppStore } from '@/store/appStore';
 import { getDeviceLocation } from '@/lib/location/deviceLocation';
 import { supabase } from '@/lib/supabase/client';
 import { clearLogsEverywhere } from '@/lib/supabase/sync';
@@ -38,6 +39,7 @@ import { WheelPicker } from '@/components/ui/WheelPicker';
 import { clearRevenueCatUser, openRevenueCatCustomerCenter } from '@/lib/revenuecat/service';
 import { resetToAppRoot } from '@/lib/navigation';
 import { clearNativeGoogleSignInSession } from '@/lib/auth/googleSignIn';
+import { shouldUseDarkAutoTheme } from '@/lib/theme/colors';
 
 const MINUTE_VALUES = [
   PRE_SALAH_REMINDERS_DISABLED,
@@ -336,7 +338,7 @@ export default function SettingsScreen() {
     reminderMinutesBefore, setReminderMinutesBefore,
     postSalahPromptEnabled, setPostSalahPromptEnabled,
     use24HourTime, setUse24HourTime,
-    darkMode, setDarkMode,
+    setDarkMode, themePreference, setThemePreference,
     calculationMethod, setCalculationMethod,
     asrMadhab, setAsrMadhab,
     dndDuringSalah, setDndDuringSalah,
@@ -359,6 +361,7 @@ export default function SettingsScreen() {
   const [showFinalClearLogsModal, setShowFinalClearLogsModal] = useState(false);
   const [showAppInfo, setShowAppInfo] = useState(false);
   const [showDndPermissionDialog, setShowDndPermissionDialog] = useState(false);
+  const [showNotificationPermissionDialog, setShowNotificationPermissionDialog] = useState(false);
   const [feedbackDialog, setFeedbackDialog] = useState<{ title: string; message: string; tone?: AppDialogTone } | null>(null);
   const [signedInEmail, setSignedInEmail] = useState<string | null>(null);
 
@@ -367,7 +370,77 @@ export default function SettingsScreen() {
   const preScheduleRunningRef = useRef(false);
   const pendingPostScheduleRef = useRef<{ prayerTimes: PrayerTimes; enabled: boolean } | null>(null);
   const postScheduleRunningRef = useRef(false);
+  const dndAccessSettingsOpenedRef = useRef(false);
+  const notificationSettingsOpenedRef = useRef(false);
   useScrollToTop(scrollRef);
+
+  // Android's DND settings screen does not return a permission result. Check the
+  // real grant when the app becomes active again, rather than treating the act
+  // of opening Settings as permission approval.
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state !== 'active' || !dndAccessSettingsOpenedRef.current) return;
+
+      dndAccessSettingsOpenedRef.current = false;
+      void (async () => {
+        try {
+          if (!NativeModules.VolumeManager) throw new Error('VolumeManager native module is unavailable');
+
+          const { VolumeManager } = await import('react-native-volume-manager');
+          const hasDndAccess = await VolumeManager.checkDndAccess();
+          setDndDuringSalah(Boolean(hasDndAccess));
+          saveSetting('dnd_during_salah', String(Boolean(hasDndAccess)));
+        } catch (error) {
+          console.warn('[settings] Could not verify Android DND access:', error);
+          setDndDuringSalah(false);
+          saveSetting('dnd_during_salah', 'false');
+        }
+      })();
+    });
+
+    return () => subscription.remove();
+  }, [setDndDuringSalah]);
+
+  // Verify notification access after returning from the system Settings screen.
+  // Opening that screen is not equivalent to granting the permission.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+
+      void (async () => {
+        try {
+          const { status } = await Notifications.getPermissionsAsync();
+          const granted = status === 'granted';
+          const wasRequestingAccess = notificationSettingsOpenedRef.current;
+          notificationSettingsOpenedRef.current = false;
+
+          if (!granted) {
+            setPostSalahPromptEnabled(false);
+            saveSetting('post_salah_prompt_enabled', 'false');
+            await cancelPostSalahReminders();
+            return;
+          }
+
+          if (wasRequestingAccess) {
+            setPostSalahPromptEnabled(true);
+            saveSetting('post_salah_prompt_enabled', 'true');
+            if (location) {
+              const prayerTimes = calculatePrayerTimes(location, new Date(), calculationMethod, asrMadhab);
+              await schedulePostSalahPrompts(prayerTimes);
+            }
+          }
+        } catch (error) {
+          console.warn('[settings] Could not verify notification permission:', error);
+          setPostSalahPromptEnabled(false);
+          saveSetting('post_salah_prompt_enabled', 'false');
+        }
+      })();
+    });
+
+    return () => subscription.remove();
+  }, [asrMadhab, calculationMethod, location, setPostSalahPromptEnabled]);
 
   // Rehydrate from DB each time tab is focused
   useFocusEffect(
@@ -388,8 +461,18 @@ export default function SettingsScreen() {
       const timeFormatRow = db.select().from(settings).where(eq(settings.key, 'use_24_hour_time')).get();
       setUse24HourTime(timeFormatRow?.value === 'true');
 
-      const darkModeRow = db.select().from(settings).where(eq(settings.key, 'dark_mode')).get();
-      setDarkMode(darkModeRow?.value === 'true');
+      const themePreferenceRow = db.select().from(settings).where(eq(settings.key, 'theme_preference')).get();
+      const savedThemePreference = themePreferenceRow?.value;
+      if (savedThemePreference === 'auto' || savedThemePreference === 'light' || savedThemePreference === 'dark') {
+        setThemePreference(savedThemePreference);
+        if (savedThemePreference !== 'auto') setDarkMode(savedThemePreference === 'dark');
+      } else {
+        // Preserve the Light/Dark choice saved by versions before Auto existed.
+        const darkModeRow = db.select().from(settings).where(eq(settings.key, 'dark_mode')).get();
+        const legacyThemePreference: ThemePreference = darkModeRow?.value === 'true' ? 'dark' : 'light';
+        setThemePreference(legacyThemePreference);
+        setDarkMode(legacyThemePreference === 'dark');
+      }
 
       const cRow = db.select().from(settings).where(eq(settings.key, 'calculation_method')).get();
       if (cRow) setCalculationMethod(cRow.value as CalculationMethodKey);
@@ -484,10 +567,6 @@ export default function SettingsScreen() {
       return;
     }
 
-    // Match the native Switch's immediate visual response while the Android
-    // permission check runs. Cancel/failure paths below roll this back.
-    setDndDuringSalah(true);
-
     try {
       if (!NativeModules.VolumeManager) throw new Error('VolumeManager native module is unavailable');
 
@@ -499,6 +578,8 @@ export default function SettingsScreen() {
         return;
       }
 
+      setDndDuringSalah(false);
+      saveSetting('dnd_during_salah', 'false');
       setShowDndPermissionDialog(true);
     } catch (error) {
       console.warn('[settings] Could not enable automatic silencing:', error);
@@ -514,10 +595,11 @@ export default function SettingsScreen() {
 
   async function openDndAccessSettings() {
     setShowDndPermissionDialog(false);
-    // Keep the preference enabled so it starts working as soon as Android
-    // grants access. Salah Mode verifies the grant each time.
-    setDndDuringSalah(true);
-    saveSetting('dnd_during_salah', 'true');
+    // Keep the switch off until Android confirms the grant after the user
+    // returns from its settings screen.
+    setDndDuringSalah(false);
+    saveSetting('dnd_during_salah', 'false');
+    dndAccessSettingsOpenedRef.current = true;
     try {
       const { VolumeManager } = await import('react-native-volume-manager');
       await VolumeManager.requestDndAccess();
@@ -533,12 +615,54 @@ export default function SettingsScreen() {
     }
   }
 
-  function handlePostSalahToggle(val: boolean) {
-    setPostSalahPromptEnabled(val);
-    saveSetting('post_salah_prompt_enabled', String(val));
+  async function handlePostSalahToggle(val: boolean) {
+    if (!val) {
+      setPostSalahPromptEnabled(false);
+      saveSetting('post_salah_prompt_enabled', 'false');
+      if (location) {
+        const pt = calculatePrayerTimes(location, new Date(), calculationMethod, asrMadhab);
+        queuePostSchedule(pt, false);
+      }
+      return;
+    }
+
+    const { status } = await Notifications.getPermissionsAsync();
+    if (status !== 'granted') {
+      setPostSalahPromptEnabled(false);
+      saveSetting('post_salah_prompt_enabled', 'false');
+      setShowNotificationPermissionDialog(true);
+      return;
+    }
+
+    setPostSalahPromptEnabled(true);
+    saveSetting('post_salah_prompt_enabled', 'true');
     if (location) {
       const pt = calculatePrayerTimes(location, new Date(), calculationMethod, asrMadhab);
-      queuePostSchedule(pt, val);
+      queuePostSchedule(pt, true);
+    }
+  }
+
+  function dismissNotificationPermissionDialog() {
+    setShowNotificationPermissionDialog(false);
+    setPostSalahPromptEnabled(false);
+    saveSetting('post_salah_prompt_enabled', 'false');
+  }
+
+  async function openNotificationSettings() {
+    setShowNotificationPermissionDialog(false);
+    setPostSalahPromptEnabled(false);
+    saveSetting('post_salah_prompt_enabled', 'false');
+    notificationSettingsOpenedRef.current = true;
+    try {
+      await Linking.openSettings();
+    } catch (error) {
+      console.warn('[settings] Could not open notification settings:', error);
+      notificationSettingsOpenedRef.current = false;
+      setFeedbackDialog({
+        title: 'Could not open settings',
+        message: 'Please allow notifications for Khushu in your device settings, then try again.',
+        tone: 'warning',
+      });
     }
   }
 
@@ -547,14 +671,18 @@ export default function SettingsScreen() {
     saveSettingAfterInteraction('use_24_hour_time', String(val));
   }
 
-  function handleDarkModeToggle(val: boolean) {
-    // Let the chosen segment paint before updating the global color scheme and
-    // persisting the preference, both of which can take work on the JS thread.
-    setDarkMode(val);
-    InteractionManager.runAfterInteractions(() => {
-      setColorScheme(val ? 'dark' : 'light');
-      saveSetting('dark_mode', String(val));
-    });
+  function handleThemePreferenceChange(preference: ThemePreference) {
+    const resolvedDarkMode = preference === 'dark'
+      || (preference === 'auto' && location !== null && shouldUseDarkAutoTheme(
+        calculatePrayerTimes(location, new Date(), calculationMethod, asrMadhab)
+      ));
+
+    setThemePreference(preference);
+    setDarkMode(resolvedDarkMode);
+    setColorScheme(resolvedDarkMode ? 'dark' : 'light');
+    saveSetting('theme_preference', preference);
+    // Retain the resolved value for a safe fallback in older app versions.
+    saveSetting('dark_mode', String(resolvedDarkMode));
   }
 
   async function openSupportEmail() {
@@ -734,12 +862,13 @@ export default function SettingsScreen() {
           <View className="bg-white rounded-2xl border border-sand-200 overflow-hidden">
             <ChoiceRow
               label="Theme"
-              value={darkMode ? 'dark' : 'light'}
+              value={themePreference}
               options={[
+                { label: 'Auto', value: 'auto' },
                 { label: 'Light', value: 'light' },
                 { label: 'Dark', value: 'dark' },
               ]}
-              onValueChange={(value) => handleDarkModeToggle(value === 'dark')}
+              onValueChange={(value) => handleThemePreferenceChange(value as ThemePreference)}
               showDivider
             />
             <ChoiceRow
@@ -1078,7 +1207,7 @@ export default function SettingsScreen() {
 
         {/* ── Version (hidden debug entry) ────────────────────────────────── */}
         <View className="items-center py-4">
-          <Text className="text-ink-300 text-xs">Khushu v1.3.0</Text>
+          <Text className="text-ink-300 text-xs">Khushu v1.4.0</Text>
         </View>
 
       </ScrollView>
@@ -1177,6 +1306,7 @@ export default function SettingsScreen() {
         message="Are you sure you want to sign out?"
         tone="warning"
         onDismiss={() => setShowSignOutModal(false)}
+        dismissible={false}
         actions={[
           { label: 'Cancel', tone: 'secondary', onPress: () => setShowSignOutModal(false) },
           { label: 'Sign out', tone: 'destructive', onPress: confirmSignOut },
@@ -1260,6 +1390,18 @@ export default function SettingsScreen() {
             onPress: dismissDndPermissionDialog,
           },
           { label: 'Open settings', onPress: () => void openDndAccessSettings() },
+        ]}
+      />
+
+      <AppDialog
+        visible={showNotificationPermissionDialog}
+        title="Allow notifications"
+        message="Khushu needs notification access before it can send post-Salah prompts. Enable notifications for Khushu in the next screen, then return to the app."
+        tone="info"
+        onDismiss={dismissNotificationPermissionDialog}
+        actions={[
+          { label: 'Cancel', tone: 'secondary', onPress: dismissNotificationPermissionDialog },
+          { label: 'Open settings', onPress: () => void openNotificationSettings() },
         ]}
       />
 

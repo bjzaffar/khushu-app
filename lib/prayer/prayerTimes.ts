@@ -20,6 +20,7 @@ export function calculatePrayerTimes(
 
   return {
     fajr: adhan.fajr,
+    sunrise: adhan.sunrise,
     dhuhr: adhan.dhuhr,
     asr: adhan.asr,
     maghrib: adhan.maghrib,
@@ -29,27 +30,17 @@ export function calculatePrayerTimes(
 
 /**
  * Given the current time, determine which Salah window we're in.
- * Returns null if between Isha end and Fajr (late night).
+ * Returns null outside a Salah window, including the time between sunrise and
+ * Dhuhr when no Salah is active.
  */
 export function getCurrentSalahWindow(
   prayerTimes: PrayerTimes,
   now: Date = new Date()
 ): SalahName | null {
-  const entries: [SalahName, Date][] = [
-    ['fajr', prayerTimes.fajr],
-    ['dhuhr', prayerTimes.dhuhr],
-    ['asr', prayerTimes.asr],
-    ['maghrib', prayerTimes.maghrib],
-    ['isha', prayerTimes.isha],
-  ];
-
-  for (let i = 0; i < entries.length - 1; i++) {
-    const [name, start] = entries[i];
-    const [, next] = entries[i + 1];
-    if (now >= start && now < next) return name;
-  }
-
-  // After Isha starts
+  if (now >= prayerTimes.fajr && now < prayerTimes.sunrise) return 'fajr';
+  if (now >= prayerTimes.dhuhr && now < prayerTimes.asr) return 'dhuhr';
+  if (now >= prayerTimes.asr && now < prayerTimes.maghrib) return 'asr';
+  if (now >= prayerTimes.maghrib && now < prayerTimes.isha) return 'maghrib';
   if (now >= prayerTimes.isha) return 'isha';
 
   return null;

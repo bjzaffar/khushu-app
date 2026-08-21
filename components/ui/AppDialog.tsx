@@ -26,6 +26,7 @@ type AppDialogProps = {
   actionLayout?: 'auto' | 'horizontal' | 'vertical';
   tone?: AppDialogTone;
   onDismiss: () => void;
+  dismissible?: boolean;
   showIcon?: boolean;
 };
 
@@ -50,6 +51,7 @@ export function AppDialog({
   actionLayout = 'auto',
   tone = 'info',
   onDismiss,
+  dismissible = true,
   showIcon = true,
 }: AppDialogProps) {
   const theme = useThemeColors();
@@ -64,12 +66,12 @@ export function AppDialog({
       animationType="fade"
       statusBarTranslucent
       navigationBarTranslucent
-      onRequestClose={onDismiss}
+      onRequestClose={dismissible ? onDismiss : () => {}}
     >
       <Pressable
         accessibilityRole="none"
         className="flex-1 bg-black/40 items-center justify-center px-6"
-        onPress={onDismiss}
+        onPress={dismissible ? onDismiss : undefined}
       >
         <Pressable
           accessibilityViewIsModal

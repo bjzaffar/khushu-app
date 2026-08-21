@@ -89,6 +89,7 @@ export type AsrMadhab = 'Shafi' | 'Hanafi';
 // ─── Prayer Times ──────────────────────────────────────────────────────────────
 export interface PrayerTimes {
   fajr: Date;
+  sunrise: Date;
   dhuhr: Date;
   asr: Date;
   maghrib: Date;

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { Location, PrayerTimes, SalahName, CalculationMethodKey, AsrMadhab } from '@/types';
 
 export type PremiumStatus = 'unknown' | 'free' | 'premium';
+export type ThemePreference = 'auto' | 'light' | 'dark';
 
 interface AppState {
   // ── Hydration ──────────────────────────────────────────────────────────────
@@ -52,6 +53,8 @@ interface AppState {
   setUse24HourTime: (val: boolean) => void;
   darkMode: boolean;
   setDarkMode: (val: boolean) => void;
+  themePreference: ThemePreference;
+  setThemePreference: (preference: ThemePreference) => void;
 
   // ── Prayer calculation settings ───────────────────────────────────────────────
   calculationMethod: CalculationMethodKey;
@@ -117,6 +120,8 @@ export const useAppStore = create<AppState>((set) => ({
   setUse24HourTime: (val) => set({ use24HourTime: val }),
   darkMode: false,
   setDarkMode: (val) => set({ darkMode: val }),
+  themePreference: 'light',
+  setThemePreference: (themePreference) => set({ themePreference }),
 
   // Prayer calculation
   calculationMethod: 'MuslimWorldLeague',
