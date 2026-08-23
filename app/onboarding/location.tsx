@@ -1,9 +1,10 @@
-import { useState, useCallback } from 'react';
-import { View, Pressable, ActivityIndicator } from 'react-native';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { View, Pressable, ActivityIndicator, Linking, AppState } from 'react-native';
 import { Text } from '@/components/ui/Typography';
 import { MapPinIcon } from 'react-native-heroicons/outline';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
+import * as Location from 'expo-location';
 import { useAppStore } from '@/store/appStore';
 import { calculatePrayerTimes } from '@/lib/prayer/prayerTimes';
 import { getDeviceLocation } from '@/lib/location/deviceLocation';
@@ -12,7 +13,30 @@ import { settings } from '@/db/schema';
 
 export default function OnboardingLocation() {
   const { setLocation, setTodaysPrayerTimes } = useAppStore();
-  const [status, setStatus] = useState<'idle' | 'loading' | 'denied' | 'error'>('idle');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'denied' | 'blocked' | 'error'>('idle');
+  const settingsOpenedRef = useRef(false);
+  const appLeftForSettingsRef = useRef(false);
+  const requestLocationRef = useRef(requestLocation);
+  requestLocationRef.current = requestLocation;
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (!settingsOpenedRef.current) return;
+
+      if (nextState === 'inactive' || nextState === 'background') {
+        appLeftForSettingsRef.current = true;
+        return;
+      }
+
+      if (nextState === 'active' && appLeftForSettingsRef.current) {
+        settingsOpenedRef.current = false;
+        appLeftForSettingsRef.current = false;
+        void requestLocationRef.current();
+      }
+    });
+
+    return () => subscription.remove();
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -25,7 +49,8 @@ export default function OnboardingLocation() {
     try {
       const coords = await getDeviceLocation();
       if (!coords) {
-        setStatus('denied');
+        const permission = await Location.getForegroundPermissionsAsync();
+        setStatus(permission.canAskAgain ? 'denied' : 'blocked');
         return;
       }
 
@@ -40,6 +65,17 @@ export default function OnboardingLocation() {
 
       router.push('/onboarding/account');
     } catch {
+      setStatus('error');
+    }
+  }
+
+  async function openLocationSettings() {
+    settingsOpenedRef.current = true;
+    appLeftForSettingsRef.current = false;
+    try {
+      await Linking.openSettings();
+    } catch {
+      settingsOpenedRef.current = false;
       setStatus('error');
     }
   }
@@ -87,7 +123,14 @@ export default function OnboardingLocation() {
           {status === 'denied' && (
             <View className="bg-sand-200 rounded-xl p-4 mb-2">
               <Text className="text-ink-500 text-sm text-center">
-                Location access was denied. Enable it in your device Settings under Apps → Expo Go → Permissions → Location, then try again.
+                Location access was not allowed. Tap Allow Location Access to try again.
+              </Text>
+            </View>
+          )}
+          {status === 'blocked' && (
+            <View className="bg-sand-200 rounded-xl p-4 mb-2">
+              <Text className="text-ink-500 text-sm text-center">
+                Location access is blocked for Khushu. Enable it in your device settings, then try again.
               </Text>
             </View>
           )}
@@ -101,14 +144,14 @@ export default function OnboardingLocation() {
 
           <Pressable
             className="bg-sage-500 py-4 rounded-2xl items-center active:bg-sage-600"
-            onPress={requestLocation}
+            onPress={status === 'blocked' ? openLocationSettings : requestLocation}
             disabled={status === 'loading'}
           >
             {status === 'loading' ? (
               <ActivityIndicator color="white" />
             ) : (
               <Text className="text-pure-white font-semibold text-base">
-                Allow Location Access
+                {status === 'blocked' ? 'Open Device Settings' : 'Allow Location Access'}
               </Text>
             )}
           </Pressable>

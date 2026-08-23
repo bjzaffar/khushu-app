@@ -97,7 +97,7 @@ export function getGoogleSignInErrorMessage(error: unknown): string {
     return 'No internet connection';
   }
   if (/expo go|nitro|native module|hybrid object/i.test(details)) {
-    return 'Google sign-in requires a new development or store build and is not available in Expo Go.';
+    return 'Google sign-in is not available in this version of Khushu. Install the latest development or store build, then try again.';
   }
 
   return 'Google sign-in could not be completed. Please try again.';
