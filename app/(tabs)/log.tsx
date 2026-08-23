@@ -53,7 +53,9 @@ import { cancelPostSalahForSalah, cancelReEngagementNotification } from '@/lib/n
 import {
   classifyDistraction,
   clearCachedReminder,
+  completeAIReminderGeneration,
   generateAIReminder,
+  queueAIReminderGeneration,
 } from '@/lib/notifications/reminderContent';
 import { writeWidgetData } from '@/lib/widget/widgetData';
 import { useThemeColors } from '@/lib/theme/colors';
@@ -613,8 +615,23 @@ export default function LogScreen() {
       if (customEntries.length > 0) {
         (async () => {
           for (const { key, label } of customEntries) {
+            // Persist this before making network requests, so an offline save
+            // can finish classification and cache its reminder after reconnect.
+            queueAIReminderGeneration({
+              customKey: key,
+              text: label,
+              prayerName: selectedSalah,
+              closestCategory: null,
+            });
+
             const category = await classifyDistraction(label);
             if (category) {
+              queueAIReminderGeneration({
+                customKey: key,
+                text: label,
+                prayerName: selectedSalah,
+                closestCategory: category,
+              });
               db.update(salahLogs)
                 .set({ classifiedCategory: category })
                 .where(eq(salahLogs.loggedAt, now.getTime()))
@@ -624,7 +641,16 @@ export default function LogScreen() {
               );
             }
 
-            await generateAIReminder(label, key, category, selectedSalah);
+            // A null result means classification was unavailable. Leave the
+            // durable queue intact instead of generating from an arbitrary
+            // fallback category; reconnect will retry classification first.
+            if (!category) continue;
+
+            const generated = await generateAIReminder(label, key, category, selectedSalah);
+            if (generated) {
+              // A successful generation has also populated the local cache.
+              completeAIReminderGeneration(key);
+            }
           }
         })();
       }

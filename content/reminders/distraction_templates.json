@@ -1,12 +1,12 @@
 {
   "cold_start": [
-    { "text": "Take a deep breath. Who are you about to stand before?", "type": "short" },
-    { "text": "Leave what is on your mind. Stand fully present.", "type": "short" },
-    { "text": "This moment is between you and Allah. Pause for a moment to collect yourself.", "type": "short" },
-    { "text": "This is your time with Allah. Do not let it pass meaninglessly.", "type": "short" },
-    { "text": "The world can wait. This cannot.", "type": "short" },
-    { "text": "You are about to stand before the Most High. Focus.", "type": "short" },
-    { "text": "You stand before the One who created you. Give Him your attention.", "type": "short" }
+    { "text": "Take a deep breath. Who are you about to stand before?" },
+    { "text": "Leave what is on your mind. Stand fully present." },
+    { "text": "This moment is between you and Allah. Pause for a moment to collect yourself." },
+    { "text": "This is your time with Allah. Do not let it pass meaninglessly." },
+    { "text": "The world can wait. This cannot." },
+    { "text": "You are about to stand before the Most High. Focus." },
+    { "text": "You stand before the One who created you. Give Him your attention." }
   ],
   "distractions": {
     "work": {
@@ -86,13 +86,12 @@
       ],
       "established": [
         { "text": "You are standing before Ash-Shakur — the Most Appreciative. He knows what it took for you to stand here tired. Offer Him the effort you have.", "type": "attribute" },
-        { "text": "You are standing before Al-Khabir — the One fully aware of your exhaustion and what it took for you to stand here. Your effort is not hidden from Him.", "type": "attribute" },
+        { "text": "You are standing before Al-Khabir — the All-Aware. He is fully aware of your exhaustion and what it took for you to stand here. Your effort is not hidden from Him.", "type": "attribute" },
         { "text": "'Establish prayer for My remembrance' - Surah Taha 20:14. You may be tired, but you do not need to feel energetic to remember Allah. Remember Him sincerely for these few moments.", "type": "ayah" },
         { "text": "This prayer will not tire you out, rather you are standing before the One who gives you strength to begin with.", "type": "short" },
         { "text": "You showed up tired. Allah appreciates that.", "type": "short" },
         { "text": "You've noted tiredness during this Salah at times.", "type": "short" },
         { "text": "Tiredness has made this prayer feel heavy at times.", "type": "short" },
-        { "text": "The adhan of Fajr adds 'Prayer is better than sleep' for a reason.", "type": "short" },
         { "text": "This prayer will not tire you out, rather you are standing before the One who gives you strength to begin with.", "type": "short" }
       ],
       "llm_guidance": {
@@ -131,23 +130,22 @@
     "rushing": {
       "attributes": [
         { "name": "Al-Kabir", "translation": "The Most Great" },
-        { "name": "As-Sabur", "translation": "The Patient" }
+        { "name": "As-Sabur", "translation": "The Most Patient" }
       ],
       "established": [
         { "text": "You are standing before Al-Kabir — the One greater than everything you rush your prayers for. Whatever is waiting can remain small for a few moments.", "type": "attribute" },
-        { "text": "You are standing before As-Sabur — the One who. He does not rush. This prayer does not need to be raced through — it needs to be given.", "type": "attribute" },
-        { "text": "Allah is not in a hurry. Neither should you be.", "type": "short" },
+        { "text": "You are standing before As-Sabur — the Most Patient. Take your time in His presence; you have nowhere else to be.", "type": "attribute" },
         { "text": "The Prophet ﷺ said: 'When you hear the iqamah, walk to the prayer with tranquility and dignity. Do not rush.' - Sahih Al-Bukhari 636", "type": "hadith" },
         { "text": "Allah swears by time in Surah Al-'Asr: 'By the passage of time! Surely humanity is in loss. Except those who... and urge each other to patience.' Be among the patient now and do not rush.", "type": "ayah" },
         { "text": "'O believers! Seek comfort in patience and prayer. Allah is truly with those who are patient.' - Surah Al-Baqarah 2:153", "type": "ayah"},
         { "text": "You often rush your salah without realising that what you are in a hurry for is in the hands of the One you stand before now.", "type": "short" },
         { "text": "You've sometimes felt rushed during this Salah.", "type": "short" },
-        { "text": "The pace of your day has occasionally followed you into this prayer.", "type": "short" }
+        { "text": "The rushed pace of your day has often followed you into this prayer.", "type": "short" }
       ],
       "llm_guidance": {
-        "theme": "Allah's nature is unhurried — rushing is the opposite of the presence this moment calls for",
+        "theme": "rushing is the opposite of the presence this moment calls for",
         "avoid": "productivity framing, telling them to be more organised, stressing them further",
-        "tone": "slowing, permission-giving, making stillness feel like the right response"
+        "tone": "slowing, giving time to what matters most, making stillness feel like the right response"
       }
     },
     "random": {
@@ -156,8 +154,8 @@
         { "name": "Al-Baseer", "translation": "The All-Seeing, The One who sees all things" }
       ],
       "established": [
-        { "text": "You are standing before Al-Aleem — The All-Knowing, who is aware of your wandering mind. Focus that mind on Him.", "type": "attribute" },
-        { "text": "You are standing before Al-Baseer — the One who sees all things. He sees your struggle to focus on Him in salah, so make Him pleased.", "type": "attribute" },
+        { "text": "You are standing before Al-Aleem — The All-Knowing, who is aware of your wandering mind and what distracts you. Focus that mind on Him.", "type": "attribute" },
+        { "text": "You are standing before Al-Baseer — the One who sees all things. He sees your struggle to focus on Him in salah, so make an effort to turn your attention to Him.", "type": "attribute" },
         { "text": "Every time you return your attention, it counts. Keep returning.", "type": "short" },
         { "text": "Your mind has sometimes wandered to random thoughts in this Salah.", "type": "short" },
         { "text": "Scattered thoughts have occasionally pulled you away here.", "type": "short" },

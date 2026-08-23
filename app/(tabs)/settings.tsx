@@ -22,6 +22,7 @@ import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import { selectIsPremium, type ThemePreference, useAppStore } from '@/store/appStore';
 import { getDeviceLocation } from '@/lib/location/deviceLocation';
+import { DEV_TOOLS_ENABLED } from '@/lib/devTools';
 import { supabase } from '@/lib/supabase/client';
 import { clearLogsEverywhere } from '@/lib/supabase/sync';
 import { writeWidgetData } from '@/lib/widget/widgetData';
@@ -360,6 +361,8 @@ export default function SettingsScreen() {
   const [showClearLogsModal, setShowClearLogsModal] = useState(false);
   const [showFinalClearLogsModal, setShowFinalClearLogsModal] = useState(false);
   const [showAppInfo, setShowAppInfo] = useState(false);
+  const versionTapCountRef = useRef(0);
+  const versionTapResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showDndPermissionDialog, setShowDndPermissionDialog] = useState(false);
   const [showNotificationPermissionDialog, setShowNotificationPermissionDialog] = useState(false);
   const [feedbackDialog, setFeedbackDialog] = useState<{ title: string; message: string; tone?: AppDialogTone } | null>(null);
@@ -838,6 +841,24 @@ export default function SettingsScreen() {
     }
   }
 
+  function handleVersionPress() {
+    if (!DEV_TOOLS_ENABLED) return;
+    versionTapCountRef.current += 1;
+    if (versionTapResetTimerRef.current) clearTimeout(versionTapResetTimerRef.current);
+
+    if (versionTapCountRef.current >= 5) {
+      versionTapCountRef.current = 0;
+      // The temporary route is intentionally not part of the generated route
+      // types until the next Expo route scan.
+      router.push('/dev' as never);
+      return;
+    }
+
+    versionTapResetTimerRef.current = setTimeout(() => {
+      versionTapCountRef.current = 0;
+    }, 1_500);
+  }
+
   return (
     <SafeAreaView className="flex-1 bg-sand-100">
       <ScrollView ref={scrollRef} className="flex-1" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 }} scrollEnabled={!wheelActive}>
@@ -1206,9 +1227,20 @@ export default function SettingsScreen() {
         </View>
 
         {/* ── Version (hidden debug entry) ────────────────────────────────── */}
-        <View className="items-center py-4">
-          <Text className="text-ink-300 text-xs">Khushu v1.4.0</Text>
-        </View>
+        {DEV_TOOLS_ENABLED ? (
+          <Pressable
+            onPress={handleVersionPress}
+            accessibilityRole="button"
+            accessibilityLabel="Khushu version"
+            className="items-center py-4"
+          >
+            <Text className="text-ink-300 text-xs">Khushu v1.4.0</Text>
+          </Pressable>
+        ) : (
+          <View className="items-center py-4">
+            <Text className="text-ink-300 text-xs">Khushu v1.4.0</Text>
+          </View>
+        )}
 
       </ScrollView>
 
@@ -1272,6 +1304,13 @@ export default function SettingsScreen() {
                 </Text>
                 <Text className="text-ink-700 text-sm leading-relaxed">
                   Premium: Khushu uses an AI-generated reminder tailored to that custom distraction, based on verified content.
+                </Text>
+              </View>
+
+              <View className="bg-sand-100 rounded-2xl p-4 mb-3">
+                <Text className="text-sage-600 text-sm font-semibold mb-1">Inaccurate reminders</Text>
+                <Text className="text-ink-700 text-sm leading-relaxed">
+                  If you have Premium and a custom distraction is your top distraction for a Salah, a strange or irrelevant reminder may mean its name is unclear to the AI. Use Edit Mode on the Log page to rename it with a simple, clear description of what is distracting you.
                 </Text>
               </View>
 

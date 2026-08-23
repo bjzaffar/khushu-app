@@ -115,7 +115,7 @@ function computeSalahInsights(
 
   for (const salah of SALAH_NAMES) {
     const rows = groups[salah] ?? [];
-    if (rows.length < 3) continue;
+    if (rows.length === 0) continue;
 
     // Top distraction
     const dCounts: Record<string, number> = {};

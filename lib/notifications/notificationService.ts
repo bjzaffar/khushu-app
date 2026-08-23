@@ -66,11 +66,18 @@ export async function schedulePreSalahReminders(
     const pattern = await getPatternForSalah(salah);
     const { text: body, type: reminderType } = getReminderContent(pattern);
 
-    // Save pending reminder type so the log screen can record which style was shown
-    db.insert(settings)
-      .values({ key: `pending_reminder_type_${salah}`, value: reminderType })
-      .onConflictDoUpdate({ target: settings.key, set: { value: reminderType } })
-      .run();
+    // Cold-start reminders are intentionally untyped: they must not affect the
+    // "What works for you" effectiveness insight. Clear a stale type from an
+    // earlier schedule instead of writing one for this reminder.
+    const pendingTypeKey = `pending_reminder_type_${salah}`;
+    if (reminderType) {
+      db.insert(settings)
+        .values({ key: pendingTypeKey, value: reminderType })
+        .onConflictDoUpdate({ target: settings.key, set: { value: reminderType } })
+        .run();
+    } else {
+      db.delete(settings).where(eq(settings.key, pendingTypeKey)).run();
+    }
 
     await Notifications.scheduleNotificationAsync({
       identifier: `pre_salah_${salah}`,

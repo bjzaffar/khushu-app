@@ -16,10 +16,10 @@ import {
 } from '@expo-google-fonts/plus-jakarta-sans';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { eq } from 'drizzle-orm';
+import { count, eq, gte, max } from 'drizzle-orm';
 import { selectIsPremium, type ThemePreference, useAppStore } from '@/store/appStore';
 import { initDatabase, db } from '@/db/database';
-import { settings } from '@/db/schema';
+import { salahLogs, settings } from '@/db/schema';
 import * as SecureStore from 'expo-secure-store';
 import { calculatePrayerTimes } from '@/lib/prayer/prayerTimes';
 import {
@@ -29,8 +29,10 @@ import {
   scheduleWeeklySummaryNotification,
   scheduleReEngagementNotification,
 } from '@/lib/notifications/notificationService';
-import { salahLogs } from '@/db/schema';
-import { count, gte, max } from 'drizzle-orm';
+import {
+  clearAllCachedAIReminders,
+  flushQueuedAIReminderGenerations,
+} from '@/lib/notifications/reminderContent';
 import type { SalahName, CalculationMethodKey, AsrMadhab } from '@/types';
 import { supabase } from '@/lib/supabase/client';
 import { syncLogsFromCloud } from '@/lib/supabase/sync';
@@ -96,7 +98,6 @@ export default function RootLayout() {
     asrMadhab,
     setAsrMadhab,
     setDndDuringSalah,
-    startSalahMode,
     setUserId,
     setPremiumStatus,
     premiumStatus,
@@ -312,6 +313,16 @@ export default function RootLayout() {
     };
   }, [asrMadhab, calculationMethod, location, setColorScheme, setDarkMode, themePreference]);
 
+  // The initial theme is resolved while the navigator is still hidden. On a
+  // cold Android start, NativeWind can initialise its CSS variables from the
+  // device colour scheme after that early call, leaving the Zustand setting on
+  // Light while the rendered palette is still Dark. Re-apply the resolved app
+  // theme once hydration has mounted the React surface so both stay in sync.
+  useEffect(() => {
+    if (!isHydrated) return;
+    setColorScheme(darkMode ? 'dark' : 'light');
+  }, [darkMode, isHydrated, setColorScheme]);
+
   useEffect(() => {
     if (isHydrated && (fontsLoaded || fontError)) {
       SplashScreen.hideAsync();
@@ -338,6 +349,16 @@ export default function RootLayout() {
     );
   }, [isDbReady, isPremium]);
 
+  // A confirmed Free entitlement must not retain AI content from an expired
+  // membership. Running this for every resolved Free startup also covers a
+  // subscription that expired while the app was closed.
+  useEffect(() => {
+    if (!isDbReady || premiumStatus !== 'free') return;
+    clearAllCachedAIReminders().catch((error) =>
+      console.warn('[reminder] Premium cache cleanup failed:', error)
+    );
+  }, [isDbReady, premiumStatus]);
+
   // Rebuild future reminders after an entitlement transition so Premium
   // customers receive the full pattern depth immediately after purchase.
   useEffect(() => {
@@ -361,20 +382,38 @@ export default function RootLayout() {
         syncLogsFromCloud(uid ?? undefined).catch((error) =>
           console.warn('[supabase] reconnect log sync failed:', error)
         );
+        if (selectIsPremium(useAppStore.getState())) {
+          flushQueuedAIReminderGenerations().catch((error) =>
+            console.warn('[reminder] queued generation retry failed:', error)
+          );
+        }
       }
     });
     return unsubscribe;
   }, []);
 
+  // NetInfo normally reports the current state to a new listener, but check
+  // once after hydration as well so queued reminders are recovered on a fresh,
+  // already-online launch.
+  useEffect(() => {
+    if (!isDbReady || !isPremium) return;
+    NetInfo.fetch().then((state) => {
+      if (state.isConnected && state.isInternetReachable !== false) {
+        return flushQueuedAIReminderGenerations();
+      }
+    }).catch((error) =>
+      console.warn('[reminder] queued generation startup retry failed:', error)
+    );
+  }, [isDbReady, isPremium]);
+
   // Handle notification taps:
-  // - pre_salah → open Salah Mode for that prayer
+  // - pre_salah → open Home; the prayer has not started yet
   // - post_salah → open Log tab pre-selected to that prayer
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
       const data = response.notification.request.content.data as { type?: string; salah?: SalahName };
-      if (data?.type === 'pre_salah' && data.salah) {
-        startSalahMode(data.salah);
-        router.push('/salah-mode');
+      if (data?.type === 'pre_salah') {
+        router.replace('/(tabs)');
       } else if (data?.type === 'post_salah' && data.salah) {
         router.push({ pathname: '/(tabs)/log', params: { salah: data.salah } });
       }
@@ -423,6 +462,7 @@ export default function RootLayout() {
             )}
             <Stack.Screen name="auth/callback" />
             <Stack.Screen name="settings/change-password" />
+            <Stack.Screen name="dev" options={{ presentation: 'modal' }} />
             <Stack.Screen name="salah-mode" options={{ presentation: 'fullScreenModal' }} />
             <Stack.Screen name="paywall" options={{ presentation: 'modal' }} />
             <Stack.Screen name="+not-found" />

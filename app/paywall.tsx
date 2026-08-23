@@ -56,7 +56,7 @@ const premiumFeatures = [
   {
     Icon: LightBulbIcon,
     title: 'AI-generated reminders',
-    description: 'Get deeper reminder patterns for your custom distractions.',
+    description: 'Get relevant reminders for your custom distractions.',
   },
   {
     Icon: PresentationChartLineIcon,
@@ -276,7 +276,7 @@ export default function PaywallScreen() {
           </View>
           <Text className="text-2xl font-semibold text-ink-900 text-center">Improve your Khushu with Premium</Text>
           <Text className="text-ink-500 text-sm text-center leading-relaxed px-3">
-            Premium adds personalised guidance and deeper reflection tools. The core salah log remains free.
+            Premium adds more personalised guidance and deeper reflection tools.
           </Text>
         </View>
 
