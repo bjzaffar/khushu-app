@@ -20,6 +20,7 @@ import Svg, { G, Rect } from 'react-native-svg';
 import { eq } from 'drizzle-orm';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import { selectIsPremium, type ThemePreference, useAppStore } from '@/store/appStore';
 import { getDeviceLocation } from '@/lib/location/deviceLocation';
 import { DEV_TOOLS_ENABLED } from '@/lib/devTools';
@@ -47,6 +48,7 @@ const MINUTE_VALUES = [
   0,
   ...Array.from({ length: 60 }, (_, i) => i + 1),
 ];
+const APP_VERSION = Constants.nativeAppVersion ?? Constants.expoConfig?.version ?? '1.4.1';
 const AnimatedGroup = Animated.createAnimatedComponent(G);
 const STAR_GLOW_LAYERS = [
   { strokeWidth: 7, strokeOpacity: 0.06 },
@@ -1234,11 +1236,11 @@ export default function SettingsScreen() {
             accessibilityLabel="Khushu version"
             className="items-center py-4"
           >
-            <Text className="text-ink-300 text-xs">Khushu v1.4.0</Text>
+            <Text className="text-ink-300 text-xs">Khushu v{APP_VERSION}</Text>
           </Pressable>
         ) : (
           <View className="items-center py-4">
-            <Text className="text-ink-300 text-xs">Khushu v1.4.0</Text>
+            <Text className="text-ink-300 text-xs">Khushu v{APP_VERSION}</Text>
           </View>
         )}
 
@@ -1310,7 +1312,7 @@ export default function SettingsScreen() {
               <View className="bg-sand-100 rounded-2xl p-4 mb-3">
                 <Text className="text-sage-600 text-sm font-semibold mb-1">Inaccurate reminders</Text>
                 <Text className="text-ink-700 text-sm leading-relaxed">
-                  If you have Premium and a custom distraction is your top distraction for a Salah, a strange or irrelevant reminder may mean its name is unclear to the AI. Use Edit Mode on the Log page to rename it with a simple, clear description of what is distracting you.
+                  If you have Premium and a custom distraction is your top distraction for a Salah, consistently strange or irrelevant reminders likely mean its name is unclear to the AI. Use Edit Mode on the Log page to rename it with a simple, clear description of what is distracting you.
                 </Text>
               </View>
 

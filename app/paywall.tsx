@@ -15,6 +15,7 @@ import {
   PresentationChartLineIcon,
   SparklesIcon,
 } from 'react-native-heroicons/outline';
+import { Coffee } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text } from '@/components/ui/Typography';
 import { AppDialog, type AppDialogTone } from '@/components/ui/AppDialog';
@@ -271,13 +272,12 @@ export default function PaywallScreen() {
         </Pressable>
 
         <View className="items-center gap-y-3 mb-8">
-          <View className="w-14 h-14 rounded-full bg-sage-600 items-center justify-center">
-            <SparklesIcon size={26} color="#FFFFFF" />
+          <SparklesIcon size={26} color="#5A7A5A" />
+          <Text className="text-2xl font-semibold text-ink-900 text-center">Grow your Khushu with Premium</Text>
+          <View className="flex-row items-center gap-x-1.5 rounded-full bg-white px-4 py-2">
+            <Text className="text-ink-500 text-sm">Less than a cup of coffee</Text>
+            <Coffee size={16} color="#6B6360" />
           </View>
-          <Text className="text-2xl font-semibold text-ink-900 text-center">Improve your Khushu with Premium</Text>
-          <Text className="text-ink-500 text-sm text-center leading-relaxed px-3">
-            Premium adds more personalised guidance and deeper reflection tools.
-          </Text>
         </View>
 
         <View className="bg-white rounded-2xl border border-sand-200 overflow-hidden mb-6">
@@ -392,12 +392,6 @@ export default function PaywallScreen() {
               })}
             </View>
 
-            {selectedRenewalCopy && (
-              <Text className="text-ink-500 text-xs text-center leading-relaxed px-2 mb-3">
-                {selectedRenewalCopy}
-              </Text>
-            )}
-
             <Pressable
               accessibilityRole="button"
               disabled={!selectedPackage || workingAction !== null || (Boolean(userId) && !hasLegalLinks)}
@@ -420,6 +414,12 @@ export default function PaywallScreen() {
                 </Text>
               )}
             </Pressable>
+
+            {selectedRenewalCopy && (
+              <Text className="text-ink-500 text-xs text-center leading-relaxed px-2 mb-2">
+                {selectedRenewalCopy}
+              </Text>
+            )}
 
             {!userId && (
               <Text className="text-ink-300 text-xs text-center leading-relaxed px-3 mb-1">

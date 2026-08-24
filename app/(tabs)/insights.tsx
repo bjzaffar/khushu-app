@@ -953,7 +953,7 @@ export default function InsightsScreen() {
             {/* ── Reminder Effectiveness ─────────────────────────────────────── */}
             <View className="mb-6">
               <Text className="text-xs font-medium text-ink-300 uppercase tracking-widest mb-3">
-                What works for you
+                What works for you (BETA)
               </Text>
                 {(data?.reminderEffectiveness.length ?? 0) === 0 ? (
                   <View className="bg-white rounded-2xl border border-sand-200 px-5 py-5">

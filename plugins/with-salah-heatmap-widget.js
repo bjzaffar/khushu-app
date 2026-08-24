@@ -58,11 +58,13 @@ function addFile(project, filePath, groupKey) {
   }
 }
 
-function addWidgetTarget(project) {
+function addWidgetTarget(project, marketingVersion) {
   const nativeTargets = project.hash.project.objects.PBXNativeTarget;
   for (const [uuid, target] of Object.entries(nativeTargets)) {
     if (!uuid.endsWith('_comment') && unquote(target.name) === WIDGET_NAME) {
-      return { uuid, pbxNativeTarget: target };
+      const existingTarget = { uuid, pbxNativeTarget: target };
+      setTargetBuildSettings(project, existingTarget, { MARKETING_VERSION: marketingVersion });
+      return existingTarget;
     }
   }
 
@@ -83,7 +85,7 @@ function addWidgetTarget(project) {
     GENERATE_INFOPLIST_FILE: 'NO',
     INFOPLIST_FILE: `${WIDGET_NAME}/Info.plist`,
     IPHONEOS_DEPLOYMENT_TARGET: '16.0',
-    MARKETING_VERSION: '1.0',
+    MARKETING_VERSION: marketingVersion,
     PRODUCT_BUNDLE_IDENTIFIER: WIDGET_BUNDLE_ID,
     PRODUCT_NAME: WIDGET_NAME,
     SKIP_INSTALL: 'YES',
@@ -136,7 +138,7 @@ function withSalahHeatmapWidget(config) {
     addSourceFile(project, `${appName}/WidgetBridge.swift`, appTarget.uuid, appGroupKey);
     addSourceFile(project, `${appName}/WidgetBridge.m`, appTarget.uuid, appGroupKey);
 
-    const widgetTarget = addWidgetTarget(project);
+    const widgetTarget = addWidgetTarget(project, modConfig.version || '1.4.1');
     const widgetGroupKey = ensureGroup(project, WIDGET_NAME);
     const widgetFiles = [
       'SalahHeatmapEntry.swift',

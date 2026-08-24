@@ -997,7 +997,7 @@ export default function LogScreen() {
                   value={otherInputText}
                   onChangeText={(t) => setOtherInputText(t.slice(0, CUSTOM_DISTRACTION_MAX_LENGTH))}
                   maxLength={CUSTOM_DISTRACTION_MAX_LENGTH}
-                  placeholder="e.g. Hunger, Noise... (clear and simple)"
+                  placeholder="e.g. Exam Stress, Noise (clear and simple)"
                   placeholderTextColor="#9B9189"
                   onFocus={scrollInputAboveKeyboard}
                   className="text-ink-700 text-sm"
