@@ -59,6 +59,7 @@ import {
 } from '@/lib/notifications/reminderContent';
 import { writeWidgetData } from '@/lib/widget/widgetData';
 import { useThemeColors } from '@/lib/theme/colors';
+import { captureAnalyticsEvent } from '@/lib/analytics/posthog';
 
 // Built-in keys excluding 'other' (rendered separately)
 const BUILTIN_DISTRACTION_KEYS = Object.keys(DISTRACTION_LABELS).filter(
@@ -585,6 +586,12 @@ export default function LogScreen() {
       logDate,
       fromSalahMode: activeDay === 'today' && params.fromSalahMode === '1',
       reminderType,
+    });
+
+    // Measure engagement without sending reflections, distraction choices,
+    // ratings, dates, or other sensitive prayer information to analytics.
+    captureAnalyticsEvent('salah logged', {
+      source: params.fromSalahMode === '1' ? 'salah_mode' : 'log_tab',
     });
 
     const cloudLog = {

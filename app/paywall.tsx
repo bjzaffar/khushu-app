@@ -38,6 +38,7 @@ import {
   packageTitle,
   selectPaywallPackages,
 } from '@/lib/revenuecat/paywall';
+import { captureAnalyticsEvent } from '@/lib/analytics/posthog';
 
 const privacyPolicyUrl = process.env.EXPO_PUBLIC_PRIVACY_POLICY_URL?.trim();
 const termsOfUseUrl = process.env.EXPO_PUBLIC_TERMS_OF_USE_URL?.trim();
@@ -90,6 +91,10 @@ export default function PaywallScreen() {
     (aPackage) => billingPeriodForPackage(aPackage) === 'monthly'
   );
 
+  useEffect(() => {
+    captureAnalyticsEvent('paywall viewed');
+  }, []);
+
   const loadOffering = useCallback(async () => {
     setLoadState('loading');
     setNotice(null);
@@ -141,9 +146,14 @@ export default function PaywallScreen() {
     loadOffering();
   }, [isPremium, loadOffering, premiumStatus, userId]);
 
-  function closePaywall() {
+  function leavePaywall() {
     if (router.canGoBack()) router.back();
     else router.replace('/(tabs)');
+  }
+
+  function closePaywall() {
+    captureAnalyticsEvent('paywall dismissed');
+    leavePaywall();
   }
 
   function openAccount() {
@@ -166,6 +176,9 @@ export default function PaywallScreen() {
 
     setWorkingAction('purchase');
     setNotice(null);
+    captureAnalyticsEvent('purchase started', {
+      billing_period: billingPeriodForPackage(selectedPackage),
+    });
     try {
       const entitlementActive = await purchaseRevenueCatPackage(selectedPackage);
       if (!entitlementActive) {
@@ -175,6 +188,10 @@ export default function PaywallScreen() {
         });
         return;
       }
+
+      captureAnalyticsEvent('purchase completed', {
+        billing_period: billingPeriodForPackage(selectedPackage),
+      });
 
       setDialog({
         title: 'Welcome to Premium',
@@ -480,7 +497,7 @@ export default function PaywallScreen() {
           onPress: () => {
             const shouldClosePaywall = dialog?.closePaywall ?? false;
             setDialog(null);
-            if (shouldClosePaywall) closePaywall();
+            if (shouldClosePaywall) leavePaywall();
           },
         }]}
       />

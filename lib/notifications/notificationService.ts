@@ -57,36 +57,81 @@ export async function schedulePreSalahReminders(
     return;
   }
 
-  const now = new Date();
-
   for (const salah of SALAH_NAMES) {
-    const triggerTime = new Date(prayerTimes[salah].getTime() - minutesBefore * 60_000);
-    if (triggerTime <= now) continue;
+    await schedulePreSalahReminder(salah, prayerTimes[salah], minutesBefore);
+  }
+}
 
-    const pattern = await getPatternForSalah(salah);
-    const { text: body, type: reminderType } = getReminderContent(pattern);
+async function schedulePreSalahReminder(
+  salah: SalahName,
+  prayerTime: Date,
+  minutesBefore: number,
+): Promise<void> {
+  const pendingTypeKey = `pending_reminder_type_${salah}`;
+  if (minutesBefore === PRE_SALAH_REMINDERS_DISABLED) {
+    db.delete(settings).where(eq(settings.key, pendingTypeKey)).run();
+    return;
+  }
 
-    // Cold-start reminders are intentionally untyped: they must not affect the
-    // "What works for you" effectiveness insight. Clear a stale type from an
-    // earlier schedule instead of writing one for this reminder.
-    const pendingTypeKey = `pending_reminder_type_${salah}`;
-    if (reminderType) {
-      db.insert(settings)
-        .values({ key: pendingTypeKey, value: reminderType })
-        .onConflictDoUpdate({ target: settings.key, set: { value: reminderType } })
-        .run();
-    } else {
-      db.delete(settings).where(eq(settings.key, pendingTypeKey)).run();
-    }
+  const triggerTime = new Date(prayerTime.getTime() - minutesBefore * 60_000);
+  if (triggerTime <= new Date()) return;
 
+  const pattern = await getPatternForSalah(salah);
+  const { text: body, type: reminderType } = getReminderContent(pattern);
+
+  // Cold-start reminders are intentionally untyped: they must not affect the
+  // "What works for you" effectiveness insight. Clear a stale type from an
+  // earlier schedule instead of writing one for this reminder.
+  if (reminderType) {
+    db.insert(settings)
+      .values({ key: pendingTypeKey, value: reminderType })
+      .onConflictDoUpdate({ target: settings.key, set: { value: reminderType } })
+      .run();
+  } else {
+    db.delete(settings).where(eq(settings.key, pendingTypeKey)).run();
+  }
+
+  await Notifications.scheduleNotificationAsync({
+    identifier: `pre_salah_${salah}`,
+    content: {
+      title: minutesBefore === 0
+        ? `${SALAH_DISPLAY_NAMES[salah]} starts now`
+        : `${SALAH_DISPLAY_NAMES[salah]} in ${minutesBefore} min`,
+      body,
+      data: { type: 'pre_salah', salah },
+      sound: false,
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DATE,
+      date: triggerTime,
+    },
+  });
+}
+
+/** Reschedule one pre-Salah reminder without disturbing the others. */
+export async function reschedulePreSalahReminder(
+  salah: SalahName,
+  prayerTime: Date,
+  minutesBefore: number,
+): Promise<void> {
+  const identifier = `pre_salah_${salah}`;
+  // Read the already-prepared notification while cancelling it. A time-only
+  // change must not pick a new reminder or recompute its pattern.
+  const [scheduled] = await Promise.all([
+    Notifications.getAllScheduledNotificationsAsync(),
+    Notifications.cancelScheduledNotificationAsync(identifier).catch(() => {}),
+  ]);
+
+  const existing = scheduled.find((notification) => notification.identifier === identifier);
+  const triggerTime = new Date(prayerTime.getTime() - minutesBefore * 60_000);
+  if (existing && minutesBefore !== PRE_SALAH_REMINDERS_DISABLED && triggerTime > new Date()) {
     await Notifications.scheduleNotificationAsync({
-      identifier: `pre_salah_${salah}`,
+      identifier,
       content: {
-        title: minutesBefore === 0
-          ? `${SALAH_DISPLAY_NAMES[salah]} starts now`
-          : `${SALAH_DISPLAY_NAMES[salah]} in ${minutesBefore} min`,
-        body,
-        data: { type: 'pre_salah', salah },
+        title: existing.content.title,
+        subtitle: existing.content.subtitle,
+        body: existing.content.body,
+        data: existing.content.data,
         sound: false,
       },
       trigger: {
@@ -94,7 +139,10 @@ export async function schedulePreSalahReminders(
         date: triggerTime,
       },
     });
+    return;
   }
+
+  await schedulePreSalahReminder(salah, prayerTime, minutesBefore);
 }
 
 /**
@@ -131,21 +179,8 @@ export async function schedulePostSalahPrompts(
   ];
 
   for (const [salah, closeTime] of windowClose) {
-    if (closeTime <= now || alreadyLogged.has(salah)) continue;
-
-    await Notifications.scheduleNotificationAsync({
-      identifier: `post_salah_${salah}`,
-      content: {
-        title: `How was your ${SALAH_DISPLAY_NAMES[salah]}?`,
-        body: 'Tap to reflect for a moment.',
-        data: { type: 'post_salah', salah },
-        sound: false,
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DATE,
-        date: closeTime,
-      },
-    });
+    if (alreadyLogged.has(salah)) continue;
+    await schedulePostSalahPrompt(salah, closeTime);
   }
 
   // A log can be saved while the asynchronous scheduling loop is running.
@@ -153,6 +188,43 @@ export async function schedulePostSalahPrompts(
   for (const salah of getLoggedToday()) {
     await cancelPostSalahForSalah(salah);
   }
+}
+
+async function schedulePostSalahPrompt(salah: SalahName, closeTime: Date): Promise<void> {
+  if (closeTime <= new Date()) return;
+
+  await Notifications.scheduleNotificationAsync({
+    identifier: `post_salah_${salah}`,
+    content: {
+      title: `How was your ${SALAH_DISPLAY_NAMES[salah]}?`,
+      body: 'Tap to reflect for a moment.',
+      data: { type: 'post_salah', salah },
+      sound: false,
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DATE,
+      date: closeTime,
+    },
+  });
+}
+
+/** Reschedule one post-Salah prompt without disturbing the others. */
+export async function reschedulePostSalahPrompt(
+  salah: SalahName,
+  closeTime: Date,
+): Promise<void> {
+  await cancelPostSalahForSalah(salah);
+
+  const today = toLocalDateKey(new Date());
+  const alreadyLogged = db
+    .select({ salahName: salahLogs.salahName })
+    .from(salahLogs)
+    .where(eq(salahLogs.logDate, today))
+    .all()
+    .some((row) => row.salahName === salah);
+  if (alreadyLogged) return;
+
+  await schedulePostSalahPrompt(salah, closeTime);
 }
 
 export async function cancelPreSalahReminders(): Promise<void> {

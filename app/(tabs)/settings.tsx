@@ -35,6 +35,9 @@ import {
   schedulePreSalahReminders,
   schedulePostSalahPrompts,
   cancelPostSalahReminders,
+  cancelPostSalahForSalah,
+  reschedulePreSalahReminder,
+  reschedulePostSalahPrompt,
 } from '@/lib/notifications/notificationService';
 import { CALCULATION_METHODS, type CalculationMethodKey, type AsrMadhab, type PrayerTimes } from '@/types';
 import { WheelPicker } from '@/components/ui/WheelPicker';
@@ -542,9 +545,10 @@ export default function SettingsScreen() {
 
   function queuePostSchedule(prayerTimes: PrayerTimes, enabled: boolean) {
     pendingPostScheduleRef.current = { prayerTimes, enabled };
-    InteractionManager.runAfterInteractions(() => {
-      void flushPostScheduleQueue();
-    });
+    // Post-Salah prompts are tied to the end of a prayer window. Unlike a
+    // pre-Salah reminder, leaving an old prompt queued after a calculation
+    // change can make it fire at the wrong Asr time, so reschedule it now.
+    void flushPostScheduleQueue();
   }
 
   function recalcAndReschedule(
@@ -557,6 +561,7 @@ export default function SettingsScreen() {
     const pt = calculatePrayerTimes(coords, new Date(), method, madhab);
     setTodaysPrayerTimes(pt);
     queuePreSchedule(pt, mins);
+    queuePostSchedule(pt, postSalahPromptEnabled);
   }
 
   function handleMinutesChange(mins: number) {
@@ -708,7 +713,24 @@ export default function SettingsScreen() {
   function handleMadhabChange(madhab: AsrMadhab) {
     setAsrMadhab(madhab);
     saveSetting('asr_madhab', madhab);
-    recalcAndReschedule(calculationMethod, madhab, reminderMinutesBefore);
+    if (!location) return;
+
+    const prayerTimes = calculatePrayerTimes(location, new Date(), calculationMethod, madhab);
+    setTodaysPrayerTimes(prayerTimes);
+
+    // A madhab selection changes only Asr. Update exactly the two schedules
+    // that depend on it, leaving every other pending prayer notification in
+    // place: the Asr pre-Salah reminder and Dhuhr's end-of-window prompt.
+    void reschedulePreSalahReminder('asr', prayerTimes.asr, reminderMinutesBefore)
+      .catch((error) => console.warn('[notifications] Asr pre-Salah reschedule failed:', error));
+    if (postSalahPromptEnabled) {
+      void reschedulePostSalahPrompt('dhuhr', prayerTimes.asr)
+        .catch((error) => console.warn('[notifications] Dhuhr post-Salah reschedule failed:', error));
+    } else {
+      void cancelPostSalahForSalah('dhuhr').catch((error) =>
+        console.warn('[notifications] Dhuhr post-Salah cancellation failed:', error)
+      );
+    }
   }
 
   async function handleUpdateLocation() {

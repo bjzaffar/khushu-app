@@ -47,6 +47,11 @@ import {
   refreshPremiumStatus,
 } from '@/lib/revenuecat/service';
 import { getThemeColors, shouldUseDarkAutoTheme } from '@/lib/theme/colors';
+import {
+  AnalyticsProvider,
+  identifyAnalyticsUser,
+  resetAnalyticsUser,
+} from '@/lib/analytics/posthog';
 
 // Capture the deep link URL IMMEDIATELY at module scope — before any async init blocks the navigator.
 // Without this, release builds lose the URL because the callback screen can't mount until
@@ -169,6 +174,7 @@ export default function RootLayout() {
 
         if (session?.user) {
           setUserId(session.user.id);
+          identifyAnalyticsUser(session.user.id);
           setPremiumStatus('unknown');
           try {
             await identifyRevenueCatUser(session.user.id);
@@ -183,6 +189,7 @@ export default function RootLayout() {
           );
         } else {
           setUserId(null);
+          resetAnalyticsUser();
           await clearRevenueCatUser();
         }
 
@@ -256,6 +263,7 @@ export default function RootLayout() {
 
       if (!session?.user || event === 'SIGNED_OUT') {
         setUserId(null);
+        resetAnalyticsUser();
         setPremiumStatus('free');
         setTimeout(() => {
           clearRevenueCatUser();
@@ -267,6 +275,7 @@ export default function RootLayout() {
       // from an async callback can deadlock setSession(), including recovery links.
       const uid = session.user.id;
       setUserId(uid);
+      identifyAnalyticsUser(uid);
       setPremiumStatus('unknown');
       setTimeout(() => {
         (async () => {
@@ -450,25 +459,27 @@ export default function RootLayout() {
   if (!isHydrated || (!fontsLoaded && !fontError)) return null;
 
   return (
-    <SafeAreaProvider>
-      <View className="flex-1 bg-sand-100">
-        <GestureHandlerRootView style={{ flex: 1, backgroundColor: 'transparent' }}>
-          <StatusBar style={darkMode ? 'light' : 'dark'} />
-          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: 'transparent' } }}>
-            {hasCompletedOnboarding ? (
-              <Stack.Screen name="(tabs)" />
-            ) : (
-              <Stack.Screen name="onboarding" />
-            )}
-            <Stack.Screen name="auth/callback" />
-            <Stack.Screen name="settings/change-password" />
-            <Stack.Screen name="dev" options={{ presentation: 'modal' }} />
-            <Stack.Screen name="salah-mode" options={{ presentation: 'fullScreenModal' }} />
-            <Stack.Screen name="paywall" options={{ presentation: 'modal' }} />
-            <Stack.Screen name="+not-found" />
-          </Stack>
-        </GestureHandlerRootView>
-      </View>
-    </SafeAreaProvider>
+    <AnalyticsProvider>
+      <SafeAreaProvider>
+        <View className="flex-1 bg-sand-100">
+          <GestureHandlerRootView style={{ flex: 1, backgroundColor: 'transparent' }}>
+            <StatusBar style={darkMode ? 'light' : 'dark'} />
+            <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: 'transparent' } }}>
+              {hasCompletedOnboarding ? (
+                <Stack.Screen name="(tabs)" />
+              ) : (
+                <Stack.Screen name="onboarding" />
+              )}
+              <Stack.Screen name="auth/callback" />
+              <Stack.Screen name="settings/change-password" />
+              <Stack.Screen name="dev" options={{ presentation: 'modal' }} />
+              <Stack.Screen name="salah-mode" options={{ presentation: 'fullScreenModal' }} />
+              <Stack.Screen name="paywall" options={{ presentation: 'modal' }} />
+              <Stack.Screen name="+not-found" />
+            </Stack>
+          </GestureHandlerRootView>
+        </View>
+      </SafeAreaProvider>
+    </AnalyticsProvider>
   );
 }

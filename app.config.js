@@ -16,7 +16,7 @@ function iosUrlSchemeFromClientId(clientId) {
 
 module.exports = () => {
   const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID?.trim();
-  const plugins = [...(baseConfig.plugins ?? [])];
+  const plugins = [...(baseConfig.plugins ?? []), 'expo-localization'];
 
   // Android uses the explicit web client ID at runtime and does not need the
   // Google Services Gradle plugin. iOS additionally needs its reversed client

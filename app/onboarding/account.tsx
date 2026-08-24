@@ -20,6 +20,7 @@ import {
   isGoogleSignInCancellation,
 } from '@/lib/auth/googleSignInConfig';
 import { startNativeGoogleSignIn } from '@/lib/auth/googleSignIn';
+import { captureAnalyticsEvent } from '@/lib/analytics/posthog';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -29,6 +30,7 @@ async function markOnboardingComplete() {
 
 type Tab = 'signin' | 'signup';
 type Status = 'idle' | 'loading' | 'error' | 'confirm_email' | 'forgot_password' | 'link_sent';
+type AuthenticationProvider = 'email' | 'google';
 
 function GoogleLogo() {
   return (
@@ -74,6 +76,7 @@ export default function AccountScreen() {
   async function finishAsGuest() {
     if (!isFromSettings) {
       await markOnboardingComplete();
+      captureAnalyticsEvent('onboarding completed', { account_type: 'guest' });
       setHasCompletedOnboarding(true);
       resetToAppRoot();
     } else {
@@ -82,8 +85,13 @@ export default function AccountScreen() {
     }
   }
 
-  async function onAuthSuccess(userId: string) {
+  async function onAuthSuccess(
+    userId: string,
+    provider: AuthenticationProvider,
+    isNewAccount = false,
+  ) {
     setUserId(userId);
+    captureAnalyticsEvent(isNewAccount ? 'account created' : 'account signed in', { provider });
     // Make the authenticated user's SQLite cache match Supabase before they
     // return to the app. Offline sessions retain their current local cache
     // until the connectivity listener can complete this refresh.
@@ -95,6 +103,7 @@ export default function AccountScreen() {
       router.dismissTo('/paywall');
     } else if (!isFromSettings) {
       await markOnboardingComplete();
+      captureAnalyticsEvent('onboarding completed', { account_type: 'registered' });
       setHasCompletedOnboarding(true);
       requestSignInSuccessNotice();
       resetToAppRoot();
@@ -119,7 +128,7 @@ export default function AccountScreen() {
         return;
       }
       const userId = data?.user?.id ?? data?.session?.user?.id;
-      if (userId) await onAuthSuccess(userId);
+      if (userId) await onAuthSuccess(userId, 'email', tab === 'signup');
     } catch {
       setErrorMsg('Something went wrong. Please try again.');
     } finally {
@@ -172,7 +181,7 @@ export default function AccountScreen() {
 
       const userId = data?.session?.user?.id;
       if (userId) {
-        await onAuthSuccess(userId);
+        await onAuthSuccess(userId, 'email', tab === 'signup');
       } else if (tab === 'signup') {
         if (returnTo === 'paywall') await setPendingAuthReturn('paywall');
         setConfirmEmail(normalizedEmail);
@@ -208,7 +217,7 @@ export default function AccountScreen() {
       const userId = data.user?.id ?? data.session?.user?.id;
       if (!userId) throw new Error('Supabase did not create a session after Google sign-in.');
 
-      await onAuthSuccess(userId);
+      await onAuthSuccess(userId, 'google');
     } catch (error) {
       await clearPendingAuthReturn();
       if (isGoogleSignInCancellation(error)) {
