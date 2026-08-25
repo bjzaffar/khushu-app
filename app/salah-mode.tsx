@@ -7,12 +7,15 @@ import { useAppStore } from '@/store/appStore';
 import { SALAH_DISPLAY_NAMES } from '@/types';
 import { getPatternForSalah } from '@/lib/patterns/patternEngine';
 import { getReminderContent } from '@/lib/notifications/reminderContent';
+import { ResponsiveContent } from '@/components/responsive/ResponsiveContent';
+import { useResponsiveLayout } from '@/components/responsive/ResponsiveLayout';
 
 type Step = 'loading' | 'reminder' | 'active';
 type SilenceStatus = 'off' | 'applying' | 'silenced' | 'permission-required' | 'failed' | 'unsupported';
 
 export default function SalahModeScreen() {
   useKeepAwake();
+  const responsive = useResponsiveLayout();
 
   const { activeSalah, endSalahMode, dndDuringSalah } = useAppStore();
   const salahDisplayName = activeSalah ? SALAH_DISPLAY_NAMES[activeSalah] : 'Salah';
@@ -152,16 +155,24 @@ export default function SalahModeScreen() {
 
   if (step === 'reminder') {
     return (
-      <View style={{ flex: 1, backgroundColor: '#1A1917', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 36 }}>
+      <View style={{ flex: 1, backgroundColor: '#1A1917', alignItems: 'center', justifyContent: 'center' }}>
         <StatusBar barStyle="light-content" backgroundColor="#1A1917" />
+        <ResponsiveContent kind="form" phoneGutter={36} style={{ alignItems: 'center' }}>
 
         {/* Salah label */}
-        <Text style={{ color: '#9B9189', fontSize: 11, letterSpacing: 3, textTransform: 'uppercase', marginBottom: 32 }}>
+        <Text style={{ color: '#9B9189', fontSize: 11, letterSpacing: 3, textTransform: 'uppercase', marginBottom: responsive.scaleSpacing(32) }}>
           {salahDisplayName}
         </Text>
 
         {/* Reminder text */}
-        <Text style={{ color: '#FFFFFF', fontSize: 20, fontWeight: '400', textAlign: 'center', lineHeight: 32, marginBottom: 64 }}>
+        <Text style={{
+          color: '#FFFFFF',
+          fontSize: 20,
+          fontWeight: '400',
+          textAlign: 'center',
+          lineHeight: 32,
+          marginBottom: responsive.isTablet ? responsive.scaleSpacing(48) : 64,
+        }}>
           {reminderText}
         </Text>
 
@@ -170,25 +181,31 @@ export default function SalahModeScreen() {
           onPress={() => setStep('active')}
           style={({ pressed }) => ({
             backgroundColor: pressed ? '#4A6A4A' : '#5A7A5A',
-            paddingVertical: 16,
-            paddingHorizontal: 48,
-            borderRadius: 20,
+            minHeight: responsive.isTablet ? responsive.scaleControl(52) : undefined,
+            justifyContent: 'center',
+            paddingVertical: responsive.scaleSpacing(16),
+            paddingHorizontal: responsive.scaleSpacing(48),
+            borderRadius: responsive.scaleControl(20),
           })}
         >
           <Text style={{ color: '#FFFFFF', fontWeight: '600', fontSize: 16 }}>
             Begin {salahDisplayName}
           </Text>
         </Pressable>
+        </ResponsiveContent>
       </View>
     );
   }
 
   // ── Active Salah screen ────────────────────────────────────────────────────
   return (
-    <View className="flex-1 bg-[#1A1917] items-center justify-center px-8">
+    <View className="flex-1 bg-[#1A1917] items-center justify-center">
       <StatusBar barStyle="light-content" backgroundColor="#1A1917" />
-
-      <View className="items-center gap-y-6 mb-20">
+      <ResponsiveContent kind="form" phoneGutter={28} style={{ alignItems: 'center' }}>
+      <View
+        className="items-center gap-y-6"
+        style={{ marginBottom: responsive.isTablet ? responsive.scaleSpacing(64) : 70 }}
+      >
         <Text className="text-6xl">🤲</Text>
         <Text className="text-pure-white text-3xl font-medium text-center leading-relaxed">
           {"Kindly do not disturb me,\nI am praying :)"}
@@ -209,6 +226,11 @@ export default function SalahModeScreen() {
             onPress={() => void handleDndAccessRequest()}
             accessibilityRole="button"
             className="border border-[#6B6360] py-2.5 px-4 rounded-xl active:bg-[#3D3A37]"
+            hitSlop={4}
+            style={{
+              minHeight: responsive.isTablet ? responsive.scaleControl(44) : undefined,
+              justifyContent: 'center',
+            }}
           >
             <Text className="text-ink-300 text-xs text-center">Allow Do Not Disturb access</Text>
           </Pressable>
@@ -233,10 +255,15 @@ export default function SalahModeScreen() {
 
       <Pressable
         className="border border-[#6B6360] py-4 px-10 rounded-2xl active:bg-[#3D3A37]"
+        style={{
+          minHeight: responsive.isTablet ? responsive.scaleControl(52) : undefined,
+          justifyContent: 'center',
+        }}
         onPress={handleEndSalah}
       >
         <Text className="text-ink-300 font-medium text-base">End Salah</Text>
       </Pressable>
+      </ResponsiveContent>
     </View>
   );
 }

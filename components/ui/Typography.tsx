@@ -7,8 +7,16 @@ import {
   type TextProps,
   type TextStyle,
 } from 'react-native';
+import { useResponsiveLayout } from '@/components/responsive/ResponsiveLayout';
+import {
+  APP_MAX_FONT_SIZE_MULTIPLIER,
+  resolveResponsiveTypography,
+} from '@/lib/responsive/typography';
 
-type TypographyProps = { className?: string };
+type TypographyProps = {
+  className?: string;
+  responsive?: boolean;
+};
 
 const fontFamilies = {
   regular: 'PlusJakartaSans_400Regular',
@@ -37,27 +45,55 @@ function resolveFontFamily(style: TextProps['style'], className?: string) {
 }
 
 export const Text = forwardRef<NativeText, TextProps & TypographyProps>(
-  ({ style, className, ...props }, ref) => (
-    <NativeText
-      ref={ref}
-      {...props}
-      className={className}
-      style={[style, { fontFamily: resolveFontFamily(style, className) }]}
-    />
-  )
+  ({ style, className, responsive = true, maxFontSizeMultiplier, ...props }, ref) => {
+    const layout = useResponsiveLayout();
+    const flattened = StyleSheet.flatten(style);
+    const responsiveStyle = responsive && layout.isTablet
+      ? resolveResponsiveTypography(
+        className,
+        flattened?.fontSize,
+        flattened?.lineHeight,
+        layout.scaleFont,
+      )
+      : undefined;
+
+    return (
+      <NativeText
+        ref={ref}
+        {...props}
+        maxFontSizeMultiplier={maxFontSizeMultiplier ?? APP_MAX_FONT_SIZE_MULTIPLIER}
+        className={className}
+        style={[style, responsiveStyle, { fontFamily: resolveFontFamily(style, className) }]}
+      />
+    );
+  }
 );
 
 Text.displayName = 'Text';
 
 export const TextInput = forwardRef<NativeTextInput, TextInputProps & TypographyProps>(
-  ({ style, className, ...props }, ref) => (
-    <NativeTextInput
-      ref={ref}
-      {...props}
-      className={className}
-      style={[style, { fontFamily: resolveFontFamily(style, className) }]}
-    />
-  )
+  ({ style, className, responsive = true, maxFontSizeMultiplier, ...props }, ref) => {
+    const layout = useResponsiveLayout();
+    const flattened = StyleSheet.flatten(style);
+    const responsiveStyle = responsive && layout.isTablet
+      ? resolveResponsiveTypography(
+        className,
+        flattened?.fontSize,
+        flattened?.lineHeight,
+        layout.scaleFont,
+      )
+      : undefined;
+
+    return (
+      <NativeTextInput
+        ref={ref}
+        {...props}
+        maxFontSizeMultiplier={maxFontSizeMultiplier ?? APP_MAX_FONT_SIZE_MULTIPLIER}
+        className={className}
+        style={[style, responsiveStyle, { fontFamily: resolveFontFamily(style, className) }]}
+      />
+    );
+  }
 );
 
 TextInput.displayName = 'TextInput';

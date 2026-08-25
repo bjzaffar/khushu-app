@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowTrendingUpIcon, Cog6ToothIcon, HomeIcon, PencilSquareIcon } from 'react-native-heroicons/outline';
 import { ArrowTrendingUpIcon as ArrowTrendingUpSolidIcon, Cog6ToothIcon as Cog6ToothSolidIcon, HomeIcon as HomeSolidIcon, PencilSquareIcon as PencilSquareSolidIcon } from 'react-native-heroicons/solid';
 import { useAppStore } from '@/store/appStore';
+import { useResponsiveLayout } from '@/components/responsive/ResponsiveLayout';
 
 function TabBarBackground() {
   return (
@@ -16,6 +17,8 @@ function TabBarBackground() {
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
+  const responsive = useResponsiveLayout();
+  const iconSize = responsive.scaleControl(20);
 
   return (
     <Tabs
@@ -25,16 +28,16 @@ export default function TabLayout() {
         tabBarStyle: {
           backgroundColor: 'transparent',
           borderTopWidth: 0,
-          paddingBottom: 8 + insets.bottom,
-          paddingTop: 8,
-          height: 64 + insets.bottom,
+          paddingBottom: responsive.scaleSpacing(8) + insets.bottom,
+          paddingTop: responsive.scaleSpacing(8),
+          height: responsive.scaleControl(64) + insets.bottom,
         },
         tabBarBackground: () => <TabBarBackground />,
         tabBarActiveTintColor: '#5A7A5A',
         tabBarInactiveTintColor: '#9B9189',
         tabBarLabelStyle: {
           fontFamily: 'PlusJakartaSans_500Medium',
-          fontSize: 11,
+          fontSize: responsive.scaleFont(11),
           fontWeight: '500',
         },
       }}
@@ -50,7 +53,7 @@ export default function TabLayout() {
         })}
         options={{
           title: 'Home',
-          tabBarIcon: ({ color, focused }) => focused ? <HomeSolidIcon size={20} color={color} /> : <HomeIcon size={20} color={color} />,
+          tabBarIcon: ({ color, focused }) => focused ? <HomeSolidIcon size={iconSize} color={color} /> : <HomeIcon size={iconSize} color={color} />,
         }}
       />
       <Tabs.Screen
@@ -64,21 +67,21 @@ export default function TabLayout() {
         })}
         options={{
           title: 'Log',
-          tabBarIcon: ({ color, focused }) => focused ? <PencilSquareSolidIcon size={20} color={color} /> : <PencilSquareIcon size={20} color={color} />,
+          tabBarIcon: ({ color, focused }) => focused ? <PencilSquareSolidIcon size={iconSize} color={color} /> : <PencilSquareIcon size={iconSize} color={color} />,
         }}
       />
       <Tabs.Screen
         name="insights"
         options={{
           title: 'Insights',
-          tabBarIcon: ({ color, focused }) => focused ? <ArrowTrendingUpSolidIcon size={20} color={color} /> : <ArrowTrendingUpIcon size={20} color={color} />,
+          tabBarIcon: ({ color, focused }) => focused ? <ArrowTrendingUpSolidIcon size={iconSize} color={color} /> : <ArrowTrendingUpIcon size={iconSize} color={color} />,
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
           title: 'Settings',
-          tabBarIcon: ({ color, focused }) => focused ? <Cog6ToothSolidIcon size={20} color={color} /> : <Cog6ToothIcon size={20} color={color} />,
+          tabBarIcon: ({ color, focused }) => focused ? <Cog6ToothSolidIcon size={iconSize} color={color} /> : <Cog6ToothIcon size={iconSize} color={color} />,
         }}
       />
     </Tabs>

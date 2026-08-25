@@ -13,7 +13,7 @@
       "backgroundColor": "#F9F5EE"
     },
     "ios": {
-      "supportsTablet": false,
+      "supportsTablet": true,
       "bundleIdentifier": "com.khushuai.app",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Khushu App needs your location to calculate accurate prayer times for your city."

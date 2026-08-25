@@ -1,17 +1,26 @@
 import { Image, View, Pressable } from 'react-native';
 import { Text } from '@/components/ui/Typography';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { ArrowTrendingUpIcon, PencilSquareIcon, SunIcon } from 'react-native-heroicons/outline';
 import type { ReactNode } from 'react';
+import { OnboardingFrame } from '@/components/responsive/OnboardingFrame';
+import { useResponsiveLayout } from '@/components/responsive/ResponsiveLayout';
 
 export default function OnboardingWelcome() {
+  const responsive = useResponsiveLayout();
+
   return (
-    <SafeAreaView className="flex-1 bg-sand-100">
-      <View className="flex-1 px-8 justify-between py-16">
+    <OnboardingFrame>
         {/* Top — logo area */}
         <View className="items-center">
-          <Image source={require('../../assets/images/khushu-logo.png')} className="w-16 h-16 rounded-2xl mb-4" />
+          <Image
+            source={require('../../assets/images/khushu-logo.png')}
+            className="rounded-2xl mb-4"
+            style={{
+              width: responsive.isTablet ? responsive.scaleControl(64) : 56,
+              height: responsive.isTablet ? responsive.scaleControl(64) : 56,
+            }}
+          />
           <Text className="text-3xl font-semibold text-ink-900 tracking-tight">
             Khushu App
           </Text>
@@ -23,17 +32,17 @@ export default function OnboardingWelcome() {
         {/* Middle — explanation */}
         <View className="gap-y-6">
           <OnboardingPoint
-            icon={<PencilSquareIcon size={24} color="#5A7A5A" />}
+            icon={<PencilSquareIcon size={responsive.scaleControl(24)} color="#5A7A5A" />}
             title="Reflect after each Salah"
             body="Rate your focus, note what pulled you away. No judgment — just awareness."
           />
           <OnboardingPoint
-            icon={<ArrowTrendingUpIcon size={24} color="#5A7A5A" />}
+            icon={<ArrowTrendingUpIcon size={responsive.scaleControl(24)} color="#5A7A5A" />}
             title="Discover your patterns"
             body="Over time, the app learns when and why your mind wanders — without fabricating anything."
           />
           <OnboardingPoint
-            icon={<SunIcon size={24} color="#5A7A5A" />}
+            icon={<SunIcon size={responsive.scaleControl(24)} color="#5A7A5A" />}
             title="Receive gentle reminders"
             body="Before each Salah, a quiet prompt to help you arrive fully present."
           />
@@ -42,7 +51,10 @@ export default function OnboardingWelcome() {
         {/* Bottom — CTA */}
         <View className="gap-y-3">
           <Pressable
-            className="bg-sage-500 py-4 rounded-2xl items-center active:bg-sage-600"
+            className="bg-sage-500 py-4 rounded-2xl items-center justify-center active:bg-sage-600"
+            style={{
+              minHeight: responsive.isTablet ? responsive.scaleControl(52) : undefined,
+            }}
             onPress={() => router.push('/onboarding/location')}
           >
             <Text className="text-pure-white font-semibold text-base">Get Started</Text>
@@ -51,8 +63,7 @@ export default function OnboardingWelcome() {
             No account required. Your data stays on your device.
           </Text>
         </View>
-      </View>
-    </SafeAreaView>
+    </OnboardingFrame>
   );
 }
 

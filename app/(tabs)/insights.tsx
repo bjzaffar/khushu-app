@@ -1,5 +1,7 @@
 import { View, ScrollView, Modal, Pressable } from 'react-native';
 import { Text } from '@/components/ui/Typography';
+import { ResponsiveContent } from '@/components/responsive/ResponsiveContent';
+import { useResponsiveLayout } from '@/components/responsive/ResponsiveLayout';
 import { BookOpenIcon, LockClosedIcon } from 'react-native-heroicons/outline';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useCallback, useState, useEffect, useRef } from 'react';
@@ -72,14 +74,16 @@ function useInsightColors() {
 
 function Bar({ pct, height = 8 }: { pct: number; height?: number }) {
   const C = useInsightColors();
+  const responsive = useResponsiveLayout();
+  const scaledHeight = responsive.scaleControl(height);
   return (
-    <View style={{ height, backgroundColor: C.sand100, borderRadius: height / 2 }}>
+    <View style={{ height: scaledHeight, backgroundColor: C.sand100, borderRadius: scaledHeight / 2 }}>
       <View
         style={{
           width: `${Math.max(2, pct)}%`,
-          height,
+          height: scaledHeight,
           backgroundColor: '#5A7A5A',
-          borderRadius: height / 2,
+          borderRadius: scaledHeight / 2,
         }}
       />
     </View>
@@ -93,8 +97,8 @@ const PAD_V = 10; // room for the selection ring at ratings 1 and 5
 const PAD_H = 10;
 const Y_AXIS_W = 18;
 
-function chartY(rating: number): number {
-  return PAD_V + ((5 - rating) / 4) * (CHART_H - 2 * PAD_V);
+function chartY(rating: number, chartHeight: number, verticalPadding: number): number {
+  return verticalPadding + ((5 - rating) / 4) * (chartHeight - 2 * verticalPadding);
 }
 
 // ── computeSalahInsights ──────────────────────────────────────────────────────
@@ -177,11 +181,16 @@ function KhushuChart({
   isAllSalah: boolean;
 }) {
   const C = useInsightColors();
+  const responsive = useResponsiveLayout();
   const [cw, setCw] = useState(0);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const DOT = 4;
-  const HIT_SIZE = 28;
-  const RING_SIZE = 14;
+  const chartHeight = responsive.scaleControl(CHART_H);
+  const verticalPadding = responsive.scaleControl(PAD_V);
+  const horizontalPadding = responsive.scaleSpacing(PAD_H);
+  const yAxisWidth = responsive.scaleSpacing(Y_AXIS_W);
+  const DOT = responsive.scaleControl(4);
+  const HIT_SIZE = responsive.scaleControl(44);
+  const RING_SIZE = responsive.scaleControl(14);
   const n = points.length;
   const selectedPoint = points.find((point) => point.id === selectedId) ?? null;
 
@@ -191,8 +200,8 @@ function KhushuChart({
 
   const getX = (i: number) =>
     n <= 1
-      ? Y_AXIS_W + (cw - Y_AXIS_W) / 2
-      : Y_AXIS_W + PAD_H + (i / (n - 1)) * (cw - Y_AXIS_W - 2 * PAD_H);
+      ? yAxisWidth + (cw - yAxisWidth) / 2
+      : yAxisWidth + horizontalPadding + (i / (n - 1)) * (cw - yAxisWidth - 2 * horizontalPadding);
 
   if (n === 0) {
     return (
@@ -207,16 +216,16 @@ function KhushuChart({
       {cw > 0 && (
         <>
           {/* Chart area */}
-          <View style={{ height: CHART_H, position: 'relative' }}>
+          <View style={{ height: chartHeight, position: 'relative' }}>
             {/* Grid lines at 1–5 */}
             {[1, 2, 3, 4, 5].map((v) => (
               <View
                 key={v}
                 style={{
                   position: 'absolute',
-                  left: Y_AXIS_W,
+                  left: yAxisWidth,
                   right: 0,
-                  top: chartY(v),
+                  top: chartY(v, chartHeight, verticalPadding),
                   height: 1,
                   backgroundColor: v === 3 ? C.sand200 : C.sand100,
                 }}
@@ -229,9 +238,9 @@ function KhushuChart({
                 key={v}
                 style={{
                   position: 'absolute',
-                  top: chartY(v) - 5,
+                  top: chartY(v, chartHeight, verticalPadding) - responsive.scaleControl(5),
                   left: 0,
-                  width: Y_AXIS_W - 5,
+                  width: yAxisWidth - responsive.scaleSpacing(5),
                   textAlign: 'right',
                   fontSize: 8,
                   lineHeight: 10,
@@ -250,7 +259,7 @@ function KhushuChart({
                   left: getX(points.indexOf(selectedPoint)) - 0.5,
                   top: 0,
                   width: 1,
-                  height: CHART_H,
+                  height: chartHeight,
                   backgroundColor: 'rgba(90, 122, 90, 0.28)',
                 }}
               />
@@ -258,8 +267,8 @@ function KhushuChart({
 
             {/* Line segments */}
             {points.slice(0, -1).map((p, i) => {
-              const x1 = getX(i),      y1 = chartY(p.avg);
-              const x2 = getX(i + 1),  y2 = chartY(points[i + 1].avg);
+              const x1 = getX(i),      y1 = chartY(p.avg, chartHeight, verticalPadding);
+              const x2 = getX(i + 1),  y2 = chartY(points[i + 1].avg, chartHeight, verticalPadding);
               const dx = x2 - x1,      dy = y2 - y1;
               const length = Math.sqrt(dx * dx + dy * dy);
               const angle = Math.atan2(dy, dx) * (180 / Math.PI);
@@ -298,7 +307,7 @@ function KhushuChart({
                   style={{
                     position: 'absolute',
                     left: getX(i) - HIT_SIZE / 2,
-                    top: chartY(point.avg) - HIT_SIZE / 2,
+                    top: chartY(point.avg, chartHeight, verticalPadding) - HIT_SIZE / 2,
                     width: HIT_SIZE,
                     height: HIT_SIZE,
                     alignItems: 'center',
@@ -332,7 +341,7 @@ function KhushuChart({
             })}
           </View>
 
-          <View style={{ height: 28, marginTop: 8, justifyContent: 'center' }}>
+          <View style={{ height: responsive.scaleControl(28), marginTop: responsive.scaleSpacing(8), justifyContent: 'center' }}>
             {selectedPoint && (
               <Text
                 style={{
@@ -370,6 +379,7 @@ function Dropdown<T extends string>({
   onLockedPress?: () => void;
 }) {
   const C = useInsightColors();
+  const responsive = useResponsiveLayout();
   const [open, setOpen] = useState(false);
   const currentLabel = options.find((o) => o.value === value)?.label ?? value;
 
@@ -382,9 +392,10 @@ function Dropdown<T extends string>({
           alignItems: 'center',
           gap: 6,
           backgroundColor: C.sand100,
-          paddingHorizontal: 14,
-          paddingVertical: 9,
-          borderRadius: 12,
+          paddingHorizontal: responsive.scaleSpacing(14),
+          paddingVertical: responsive.scaleSpacing(9),
+          minHeight: responsive.isTablet ? responsive.scaleControl(44) : undefined,
+          borderRadius: responsive.scaleControl(12),
         }}
       >
         <Text style={{ color: C.ink700, fontSize: 14, fontWeight: '500' }}>
@@ -407,7 +418,7 @@ function Dropdown<T extends string>({
             backgroundColor: 'rgba(0,0,0,0.4)',
             justifyContent: 'center',
             alignItems: 'center',
-            paddingHorizontal: 24,
+            paddingHorizontal: responsive.isTablet ? responsive.gutter : 24,
           }}
           onPress={() => setOpen(false)}
         >
@@ -417,7 +428,7 @@ function Dropdown<T extends string>({
             onPress={(event) => event.stopPropagation()}
             style={{
               width: '100%',
-              maxWidth: 384,
+              maxWidth: responsive.isTablet ? responsive.maxWidths.dialog : 384,
               shadowColor: '#1A1917',
               shadowOffset: { width: 0, height: 12 },
               shadowOpacity: 0.16,
@@ -433,8 +444,8 @@ function Dropdown<T extends string>({
                 borderColor: C.sand200,
                 overflow: 'hidden',
                 width: '100%',
-                paddingHorizontal: 12,
-                paddingVertical: 8,
+                paddingHorizontal: responsive.scaleSpacing(12),
+                paddingVertical: responsive.scaleSpacing(8),
               }}
             >
               {options.map((opt, i) => {
@@ -462,8 +473,9 @@ function Dropdown<T extends string>({
                         flexDirection: 'row',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        paddingHorizontal: 16,
-                        paddingVertical: 16,
+                        paddingHorizontal: responsive.scaleSpacing(16),
+                        paddingVertical: responsive.scaleSpacing(16),
+                        minHeight: responsive.isTablet ? responsive.scaleControl(52) : undefined,
                         borderBottomWidth: i < options.length - 1 ? 1 : 0,
                         borderBottomColor: C.sand100,
                       }}
@@ -523,11 +535,12 @@ function Dropdown<T extends string>({
 
 function SalahInsightCard({ item, isLast }: { item: SalahInsight; isLast: boolean }) {
   const C = useInsightColors();
+  const responsive = useResponsiveLayout();
   return (
     <View
       style={{
-        paddingHorizontal: 20,
-        paddingVertical: 14,
+        paddingHorizontal: responsive.scaleSpacing(20),
+        paddingVertical: responsive.scaleSpacing(14),
         borderBottomWidth: isLast ? 0 : 1,
         borderBottomColor: C.sand100,
       }}
@@ -570,6 +583,7 @@ const TIMEFRAME_OPTIONS: { value: '7' | '30' | '90' | 'all'; label: string }[] =
 // ── InsightsScreen ────────────────────────────────────────────────────────────
 
 export default function InsightsScreen() {
+  const responsive = useResponsiveLayout();
   const C = useInsightColors();
   const isPremium = useAppStore(selectIsPremium);
   const [data, setData] = useState<InsightsData | null>(null);
@@ -770,8 +784,12 @@ export default function InsightsScreen() {
       <ScrollView
         ref={scrollRef}
         className="flex-1"
-        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 }}
+        contentContainerStyle={{
+          paddingTop: responsive.scaleSpacing(24),
+          paddingBottom: responsive.scaleSpacing(40),
+        }}
       >
+        <ResponsiveContent>
         <Text className="text-2xl font-semibold text-ink-900 mb-6">Insights</Text>
 
         {isEmpty ? (
@@ -1000,6 +1018,7 @@ export default function InsightsScreen() {
               </View>
             </>
         )}
+        </ResponsiveContent>
       </ScrollView>
     </SafeAreaView>
   );

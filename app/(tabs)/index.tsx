@@ -9,6 +9,8 @@ import {
   View,
 } from 'react-native';
 import { Text, TextInput } from '@/components/ui/Typography';
+import { ResponsiveContent } from '@/components/responsive/ResponsiveContent';
+import { useResponsiveLayout } from '@/components/responsive/ResponsiveLayout';
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -149,6 +151,7 @@ function loadHomeLogs(dateKey: string): Record<string, HomeSalahLog> {
 }
 
 export default function HomeScreen() {
+  const responsive = useResponsiveLayout();
   const {
     isDbReady,
     todaysPrayerTimes,
@@ -368,8 +371,12 @@ export default function HomeScreen() {
       <ScrollView
         ref={scrollRef}
         className="flex-1"
-        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 }}
+        contentContainerStyle={{
+          paddingTop: responsive.scaleSpacing(24),
+          paddingBottom: responsive.scaleSpacing(40),
+        }}
       >
+        <ResponsiveContent>
         <View className="mb-6">
           <Text className="text-2xl font-semibold text-ink-900">Today</Text>
           <Text className="text-ink-300 text-sm mt-1">{formatLongLocalDate(now)}</Text>
@@ -385,6 +392,11 @@ export default function HomeScreen() {
             <Pressable
               onPress={() => transitionToDate(shiftLocalDate(selectedDate, -1))}
               className="absolute left-0 top-0 w-10 h-10 rounded-full bg-white items-center justify-center"
+              hitSlop={5}
+              style={{
+                width: responsive.isTablet ? responsive.scaleControl(44) : 35,
+                height: responsive.isTablet ? responsive.scaleControl(44) : 35,
+              }}
               accessibilityRole="button"
               accessibilityLabel="Show previous day"
             >
@@ -394,6 +406,11 @@ export default function HomeScreen() {
               <Pressable
                 onPress={() => transitionToDate(shiftLocalDate(selectedDate, 1))}
                 className="absolute right-0 top-0 w-10 h-10 rounded-full bg-white items-center justify-center"
+                hitSlop={5}
+                style={{
+                  width: responsive.isTablet ? responsive.scaleControl(44) : 35,
+                  height: responsive.isTablet ? responsive.scaleControl(44) : 35,
+                }}
                 accessibilityRole="button"
                 accessibilityLabel="Show next day"
               >
@@ -436,6 +453,7 @@ export default function HomeScreen() {
             </Text>
           </View>
         )}
+        </ResponsiveContent>
       </ScrollView>
 
       {showSignInSuccess && (
@@ -479,13 +497,15 @@ export default function HomeScreen() {
         >
           <Pressable
             accessibilityRole="none"
-            className="flex-1 bg-black/40 items-center justify-center px-6"
+            className="flex-1 bg-black/40 items-center justify-center"
+            style={{ paddingHorizontal: responsive.isTablet ? responsive.gutter : 21 }}
             onPress={closeNote}
           >
             <Pressable
               accessibilityViewIsModal
-              className="bg-white border border-sand-200 rounded-3xl px-6 pt-6 pb-5 w-full max-w-sm"
+              className="bg-white border border-sand-200 rounded-3xl px-6 pt-6 pb-5 w-full"
               style={{
+                maxWidth: responsive.isTablet ? responsive.maxWidths.dialog : 336,
                 shadowColor: '#1A1917',
                 shadowOffset: { width: 0, height: 12 },
                 shadowOpacity: 0.16,
@@ -607,6 +627,7 @@ function SalahCard({
   onNotePress?: () => void;
 }) {
   const theme = useThemeColors();
+  const responsive = useResponsiveLayout();
   const isInteractive = status !== 'logged' && status !== 'historical';
 
   const borderColor = {
@@ -622,7 +643,12 @@ function SalahCard({
       onPress={onPress}
       accessibilityState={{ disabled: !isInteractive }}
       className={`rounded-2xl px-5 py-4 flex-row justify-between items-center border bg-white ${borderColor}`}
-      style={{ opacity: status === 'past' ? 0.6 : 1 }}
+      style={{
+        opacity: status === 'past' ? 0.6 : 1,
+        minHeight: responsive.isTablet ? responsive.scaleControl(68) : undefined,
+        paddingHorizontal: responsive.isTablet ? responsive.scaleSpacing(20) : undefined,
+        paddingVertical: responsive.isTablet ? responsive.scaleSpacing(16) : undefined,
+      }}
     >
       <View className="flex-1">
         <View className="flex-row items-center gap-x-2">
@@ -636,7 +662,7 @@ function SalahCard({
               onPress={onNotePress}
               hitSlop={8}
             >
-              <BookmarkSolidIcon size={18} color="#EAB308" />
+              <BookmarkSolidIcon size={responsive.scaleControl(18)} color="#EAB308" />
             </Pressable>
           )}
         </View>
@@ -666,8 +692,8 @@ function SalahCard({
             <View className="flex-row gap-x-0.5">
               {[1, 2, 3, 4, 5].map((n) => (
                 n <= rating
-                  ? <StarSolidIcon key={n} size={12} color="#5A7A5A" />
-                  : <StarIcon key={n} size={12} color={theme.borderStrong} />
+                  ? <StarSolidIcon key={n} size={responsive.scaleControl(12)} color="#5A7A5A" />
+                  : <StarIcon key={n} size={responsive.scaleControl(12)} color={theme.borderStrong} />
               ))}
             </View>
           </View>

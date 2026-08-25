@@ -2,7 +2,6 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { View, Pressable, ActivityIndicator, Linking, AppState } from 'react-native';
 import { Text } from '@/components/ui/Typography';
 import { MapPinIcon } from 'react-native-heroicons/outline';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import * as Location from 'expo-location';
 import { useAppStore } from '@/store/appStore';
@@ -10,8 +9,11 @@ import { calculatePrayerTimes } from '@/lib/prayer/prayerTimes';
 import { getDeviceLocation } from '@/lib/location/deviceLocation';
 import { db } from '@/db/database';
 import { settings } from '@/db/schema';
+import { OnboardingFrame } from '@/components/responsive/OnboardingFrame';
+import { useResponsiveLayout } from '@/components/responsive/ResponsiveLayout';
 
 export default function OnboardingLocation() {
+  const responsive = useResponsiveLayout();
   const { setLocation, setTodaysPrayerTimes } = useAppStore();
   const [status, setStatus] = useState<'idle' | 'loading' | 'denied' | 'blocked' | 'error'>('idle');
   const settingsOpenedRef = useRef(false);
@@ -86,11 +88,10 @@ export default function OnboardingLocation() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-sand-100">
-      <View className="flex-1 px-8 justify-between py-16">
+    <OnboardingFrame>
         {/* Header */}
         <View className="items-center gap-y-3">
-          <MapPinIcon size={48} color="#5A7A5A" />
+          <MapPinIcon size={responsive.scaleControl(48)} color="#5A7A5A" />
           <Text className="text-2xl font-semibold text-ink-900 text-center">
             Prayer times for your location
           </Text>
@@ -112,8 +113,8 @@ export default function OnboardingLocation() {
             ['Isha', '7:28 PM'],
           ].map(([name, time]) => (
             <View key={name} className="flex-row justify-between">
-              <Text className="text-ink-700 font-medium">{name}</Text>
-              <Text className="text-ink-300">{time}</Text>
+              <Text className="text-ink-700 font-medium" style={{ fontSize: 14 }}>{name}</Text>
+              <Text className="text-ink-300" style={{ fontSize: 14 }}>{time}</Text>
             </View>
           ))}
         </View>
@@ -143,7 +144,10 @@ export default function OnboardingLocation() {
           )}
 
           <Pressable
-            className="bg-sage-500 py-4 rounded-2xl items-center active:bg-sage-600"
+            className="bg-sage-500 py-4 rounded-2xl items-center justify-center active:bg-sage-600"
+            style={{
+              minHeight: responsive.isTablet ? responsive.scaleControl(52) : undefined,
+            }}
             onPress={status === 'blocked' ? openLocationSettings : requestLocation}
             disabled={status === 'loading'}
           >
@@ -157,13 +161,15 @@ export default function OnboardingLocation() {
           </Pressable>
 
           <Pressable
-            className="py-3 items-center"
+            className="py-3 items-center justify-center"
+            style={{
+              minHeight: responsive.isTablet ? responsive.scaleControl(44) : undefined,
+            }}
             onPress={skipLocation}
           >
             <Text className="text-ink-300 text-sm">Continue without location</Text>
           </Pressable>
         </View>
-      </View>
-    </SafeAreaView>
+    </OnboardingFrame>
   );
 }

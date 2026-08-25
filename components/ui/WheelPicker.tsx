@@ -6,6 +6,7 @@ import {
   NativeScrollEvent,
 } from 'react-native';
 import { Text } from '@/components/ui/Typography';
+import { useResponsiveLayout } from '@/components/responsive/ResponsiveLayout';
 
 const ITEM_HEIGHT = 48;
 const VISIBLE_ITEMS = 5;
@@ -20,6 +21,8 @@ interface Props {
 }
 
 export function WheelPicker({ values, selectedValue, onValueChange, formatValue, onTouchStart, onTouchEnd }: Props) {
+  const responsive = useResponsiveLayout();
+  const itemHeight = responsive.scaleControl(ITEM_HEIGHT);
   const scrollRef = useRef<ScrollView>(null);
   const settleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -28,25 +31,23 @@ export function WheelPicker({ values, selectedValue, onValueChange, formatValue,
     let initialScrollTimeout: ReturnType<typeof setTimeout> | null = null;
     if (index >= 0) {
       initialScrollTimeout = setTimeout(() => {
-        scrollRef.current?.scrollTo({ y: index * ITEM_HEIGHT, animated: false });
+        scrollRef.current?.scrollTo({ y: index * itemHeight, animated: false });
       }, 50);
     }
     return () => {
       if (initialScrollTimeout) clearTimeout(initialScrollTimeout);
       if (settleTimeoutRef.current) clearTimeout(settleTimeoutRef.current);
     };
-    // The initial value determines only the first non-animated scroll position.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [itemHeight, selectedValue, values]);
 
   const commitOffset = useCallback(
     (offsetY: number) => {
-      const index = Math.round(offsetY / ITEM_HEIGHT);
+      const index = Math.round(offsetY / itemHeight);
       const clamped = Math.max(0, Math.min(index, values.length - 1));
       const nextValue = values[clamped];
       if (nextValue !== selectedValue) onValueChange(nextValue);
     },
-    [onValueChange, selectedValue, values]
+    [itemHeight, onValueChange, selectedValue, values]
   );
 
   const clearPendingSettle = useCallback(() => {
@@ -81,7 +82,7 @@ export function WheelPicker({ values, selectedValue, onValueChange, formatValue,
 
   return (
     <View
-      style={{ height: ITEM_HEIGHT * VISIBLE_ITEMS, position: 'relative' }}
+      style={{ height: itemHeight * VISIBLE_ITEMS, position: 'relative' }}
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
       onTouchCancel={onTouchEnd}
@@ -90,10 +91,10 @@ export function WheelPicker({ values, selectedValue, onValueChange, formatValue,
         pointerEvents="none"
         style={{
           position: 'absolute',
-          top: ITEM_HEIGHT * centerOffset,
+          top: itemHeight * centerOffset,
           left: 0,
           right: 0,
-          height: ITEM_HEIGHT,
+          height: itemHeight,
           backgroundColor: 'rgba(90, 122, 90, 0.08)',
           borderRadius: 10,
           borderTopWidth: 1,
@@ -103,11 +104,11 @@ export function WheelPicker({ values, selectedValue, onValueChange, formatValue,
       />
       <ScrollView
         ref={scrollRef}
-        snapToInterval={ITEM_HEIGHT}
+        snapToInterval={itemHeight}
         decelerationRate="fast"
         showsVerticalScrollIndicator={false}
         nestedScrollEnabled={true}
-        contentContainerStyle={{ paddingVertical: ITEM_HEIGHT * centerOffset }}
+        contentContainerStyle={{ paddingVertical: itemHeight * centerOffset }}
         onMomentumScrollBegin={clearPendingSettle}
         onMomentumScrollEnd={handleMomentumScrollEnd}
         onScrollEndDrag={handleScrollEndDrag}
@@ -117,7 +118,7 @@ export function WheelPicker({ values, selectedValue, onValueChange, formatValue,
           return (
             <View
               key={v}
-              style={{ height: ITEM_HEIGHT, alignItems: 'center', justifyContent: 'center' }}
+              style={{ height: itemHeight, alignItems: 'center', justifyContent: 'center' }}
             >
               <Text
                 style={{

@@ -3,6 +3,8 @@ import {
   ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Text, TextInput } from '@/components/ui/Typography';
+import { ResponsiveContent } from '@/components/responsive/ResponsiveContent';
+import { useResponsiveLayout } from '@/components/responsive/ResponsiveLayout';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useState, useEffect } from 'react';
 import { router } from 'expo-router';
@@ -21,6 +23,7 @@ function isNetworkError(error: unknown): boolean {
 }
 
 export default function ChangePasswordScreen() {
+  const responsive = useResponsiveLayout();
   const [mode, setMode] = useState<ScreenMode>('send_link');
   const [userEmail, setUserEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -97,18 +100,34 @@ export default function ChangePasswordScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView className="flex-1" keyboardShouldPersistTaps="handled">
-          <View className="flex-1 px-6 pt-6 pb-10">
+          <ResponsiveContent
+            kind="form"
+            phoneGutter={21}
+            className="flex-1"
+            style={{
+              paddingTop: responsive.scaleSpacing(24),
+              paddingBottom: responsive.scaleSpacing(40),
+            }}
+          >
 
             {/* ── Header ──────────────────────────────────────────────────── */}
-            <Pressable onPress={() => router.back()} className="mb-4 self-start p-1 active:opacity-60">
-              <View className="flex-row items-center gap-x-1"><ArrowLeftIcon size={16} color="#5A7A5A" /><Text className="text-sage-600 text-sm font-medium">Back</Text></View>
+            <Pressable
+              onPress={() => router.back()}
+              className="mb-4 self-start p-1 active:opacity-60"
+              hitSlop={8}
+              style={{
+                minHeight: responsive.isTablet ? responsive.scaleControl(44) : undefined,
+                justifyContent: 'center',
+              }}
+            >
+              <View className="flex-row items-center gap-x-1"><ArrowLeftIcon size={responsive.scaleControl(16)} color="#5A7A5A" /><Text className="text-sage-600 text-sm font-medium">Back</Text></View>
             </Pressable>
 
             {/* ── Step 1: Send reset link ────────────────────────────────── */}
             {mode === 'send_link' && (
               <View className="items-center gap-y-4 mt-8">
                 <View className="w-16 h-16 rounded-full bg-sage-600 items-center justify-center">
-                  <LockClosedIcon size={24} color="#FFFFFF" />
+                  <LockClosedIcon size={responsive.scaleControl(24)} color="#FFFFFF" />
                 </View>
                 <Text className="text-ink-700 font-medium text-base text-center">
                   Change your password
@@ -124,6 +143,10 @@ export default function ChangePasswordScreen() {
                   onPress={handleSendResetLink}
                   disabled={loading}
                   className="bg-sage-600 py-4 rounded-2xl items-center w-full active:bg-sage-700"
+                  style={{
+                    minHeight: responsive.isTablet ? responsive.scaleControl(52) : undefined,
+                    justifyContent: 'center',
+                  }}
                 >
                   {loading
                     ? <ActivityIndicator color="#FFFFFF" />
@@ -137,7 +160,7 @@ export default function ChangePasswordScreen() {
             {mode === 'link_sent' && (
               <View className="items-center gap-y-4 mt-8">
                 <View className="w-16 h-16 rounded-full bg-sage-600 items-center justify-center">
-                  <EnvelopeIcon size={24} color="#FFFFFF" />
+                  <EnvelopeIcon size={responsive.scaleControl(24)} color="#FFFFFF" />
                 </View>
                 <Text className="text-ink-700 font-medium text-base text-center">
                   Check your email
@@ -153,6 +176,11 @@ export default function ChangePasswordScreen() {
                   onPress={handleSendResetLink}
                   disabled={loading}
                   className="py-2"
+                  hitSlop={4}
+                  style={{
+                    minHeight: responsive.isTablet ? responsive.scaleControl(44) : undefined,
+                    justifyContent: 'center',
+                  }}
                 >
                   {loading
                     ? <ActivityIndicator color="#5A7A5A" size="small" />
@@ -166,7 +194,7 @@ export default function ChangePasswordScreen() {
             {mode === 'update_password' && (
               <View className="items-center gap-y-4 mt-8">
                 <View className="w-16 h-16 rounded-full bg-sage-600 items-center justify-center">
-                  <KeyIcon size={24} color="#FFFFFF" />
+                  <KeyIcon size={responsive.scaleControl(24)} color="#FFFFFF" />
                 </View>
                 <Text className="text-ink-700 font-medium text-base text-center">
                   Set new password
@@ -183,15 +211,23 @@ export default function ChangePasswordScreen() {
                     autoCapitalize="none"
                     autoCorrect={false}
                     className="flex-1 px-4 py-3 text-ink-700 text-sm"
+                    style={{
+                      minHeight: responsive.isTablet ? responsive.scaleControl(48) : undefined,
+                    }}
                     placeholderTextColor="#8C817A"
                   />
                   <Pressable
                     onPress={() => setShowNewPassword((visible) => !visible)}
                     className="px-4 py-3"
+                    style={{
+                      minWidth: responsive.isTablet ? responsive.scaleControl(44) : undefined,
+                      minHeight: responsive.isTablet ? responsive.scaleControl(48) : undefined,
+                      justifyContent: 'center',
+                    }}
                     accessibilityRole="button"
                     accessibilityLabel={showNewPassword ? 'Hide new password' : 'Show new password'}
                   >
-                    <Ionicons name={showNewPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color="#6B6360" />
+                    <Ionicons name={showNewPassword ? 'eye-off-outline' : 'eye-outline'} size={responsive.scaleControl(20)} color="#6B6360" />
                   </Pressable>
                 </View>
                 <View className="flex-row items-center bg-sand-200 border border-sand-300 rounded-xl w-full">
@@ -203,15 +239,23 @@ export default function ChangePasswordScreen() {
                     autoCapitalize="none"
                     autoCorrect={false}
                     className="flex-1 px-4 py-3 text-ink-700 text-sm"
+                    style={{
+                      minHeight: responsive.isTablet ? responsive.scaleControl(48) : undefined,
+                    }}
                     placeholderTextColor="#8C817A"
                   />
                   <Pressable
                     onPress={() => setShowConfirmPassword((visible) => !visible)}
                     className="px-4 py-3"
+                    style={{
+                      minWidth: responsive.isTablet ? responsive.scaleControl(44) : undefined,
+                      minHeight: responsive.isTablet ? responsive.scaleControl(48) : undefined,
+                      justifyContent: 'center',
+                    }}
                     accessibilityRole="button"
                     accessibilityLabel={showConfirmPassword ? 'Hide confirmed password' : 'Show confirmed password'}
                   >
-                    <Ionicons name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color="#6B6360" />
+                    <Ionicons name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'} size={responsive.scaleControl(20)} color="#6B6360" />
                   </Pressable>
                 </View>
                 {errorMsg ? (
@@ -221,6 +265,10 @@ export default function ChangePasswordScreen() {
                   onPress={handleUpdatePassword}
                   disabled={loading}
                   className="bg-sage-600 py-4 rounded-2xl items-center w-full active:bg-sage-700"
+                  style={{
+                    minHeight: responsive.isTablet ? responsive.scaleControl(52) : undefined,
+                    justifyContent: 'center',
+                  }}
                 >
                   {loading
                     ? <ActivityIndicator color="#FFFFFF" />
@@ -230,7 +278,7 @@ export default function ChangePasswordScreen() {
               </View>
             )}
 
-          </View>
+          </ResponsiveContent>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

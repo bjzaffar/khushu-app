@@ -6,7 +6,6 @@ import Purchases, {
   type PurchasesOffering,
   type PurchasesPackage,
 } from 'react-native-purchases';
-import RevenueCatUI from 'react-native-purchases-ui';
 import { useAppStore } from '@/store/appStore';
 import { premiumStatusFromCustomerInfo } from '@/lib/revenuecat/entitlements';
 import { selectRevenueCatApiKey } from '@/lib/revenuecat/config';
@@ -76,16 +75,22 @@ export async function identifyRevenueCatUser(userId: string): Promise<void> {
 }
 
 export async function refreshPremiumStatus(): Promise<void> {
-  if (!await configureRevenueCat()) return;
-
   try {
-    applyCustomerInfo(await Purchases.getCustomerInfo());
+    await getRevenueCatCustomerInfo();
   } catch (error) {
     // The SDK's cached CustomerInfo remains its only offline source. Never
     // promote access after a failed refresh.
     console.warn('[revenuecat] CustomerInfo refresh failed:', error);
     useAppStore.getState().setPremiumStatus('free');
   }
+}
+
+/** Returns the latest subscription snapshot and keeps the app entitlement in sync. */
+export async function getRevenueCatCustomerInfo(): Promise<CustomerInfo | null> {
+  if (!await configureRevenueCat()) return null;
+  const customerInfo = await Purchases.getCustomerInfo();
+  applyCustomerInfo(customerInfo);
+  return customerInfo;
 }
 
 export async function clearRevenueCatUser(): Promise<void> {
@@ -122,17 +127,6 @@ export async function restoreRevenueCatPurchases(): Promise<boolean> {
   const customerInfo = await Purchases.restorePurchases();
   applyCustomerInfo(customerInfo);
   return premiumStatusFromCustomerInfo(customerInfo) === 'premium';
-}
-
-export async function openRevenueCatCustomerCenter(): Promise<boolean> {
-  if (!await configureRevenueCat()) return false;
-  await RevenueCatUI.presentCustomerCenter({
-    callbacks: {
-      onRestoreCompleted: ({ customerInfo }) => applyCustomerInfo(customerInfo),
-    },
-  });
-  await refreshPremiumStatus();
-  return true;
 }
 
 export function isRevenueCatPurchaseCancellation(error: unknown): boolean {

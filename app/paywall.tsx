@@ -7,7 +7,7 @@ import {
   ScrollView,
   View,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, type Href } from 'expo-router';
 import {
   CheckCircleIcon,
   DevicePhoneMobileIcon,
@@ -18,12 +18,13 @@ import {
 import { Coffee } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text } from '@/components/ui/Typography';
+import { ResponsiveContent } from '@/components/responsive/ResponsiveContent';
+import { useResponsiveLayout } from '@/components/responsive/ResponsiveLayout';
 import { AppDialog, type AppDialogTone } from '@/components/ui/AppDialog';
 import { selectIsPremium, useAppStore } from '@/store/appStore';
 import {
   getCurrentRevenueCatOffering,
   isRevenueCatPurchaseCancellation,
-  openRevenueCatCustomerCenter,
   purchaseRevenueCatPackage,
   restoreRevenueCatPurchases,
   revenueCatPurchaseErrorMessage,
@@ -44,7 +45,7 @@ const privacyPolicyUrl = process.env.EXPO_PUBLIC_PRIVACY_POLICY_URL?.trim();
 const termsOfUseUrl = process.env.EXPO_PUBLIC_TERMS_OF_USE_URL?.trim();
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
-type WorkingAction = 'purchase' | 'restore' | 'manage' | null;
+type WorkingAction = 'purchase' | 'restore' | null;
 type Notice = { tone: 'info' | 'error'; text: string };
 type PaywallDialog = {
   title: string;
@@ -73,6 +74,7 @@ const premiumFeatures = [
 ] as const;
 
 export default function PaywallScreen() {
+  const responsive = useResponsiveLayout();
   const { userId, premiumStatus } = useAppStore();
   const isPremium = useAppStore(selectIsPremium);
   const [offering, setOffering] = useState<RevenueCatOffering | null>(null);
@@ -240,24 +242,8 @@ export default function PaywallScreen() {
     }
   }
 
-  async function handleManageSubscription() {
-    if (workingAction) return;
-    setWorkingAction('manage');
-    setNotice(null);
-    try {
-      const opened = await openRevenueCatCustomerCenter();
-      if (!opened) {
-        setNotice({ tone: 'error', text: 'Subscription management is not configured for this build.' });
-      }
-    } catch (error) {
-      console.warn('[revenuecat] customer center failed:', error);
-      setNotice({
-        tone: 'error',
-        text: 'Could not open subscription management. Please try again.',
-      });
-    } finally {
-      setWorkingAction(null);
-    }
+  function handleManageSubscription() {
+    router.push('/settings/manage-subscription' as Href);
   }
 
   async function openLegalUrl(url: string | undefined) {
@@ -277,23 +263,32 @@ export default function PaywallScreen() {
     <SafeAreaView className="flex-1 bg-sand-100">
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 40 }}
+        contentContainerStyle={{
+          paddingTop: responsive.scaleSpacing(16),
+          paddingBottom: responsive.scaleSpacing(40),
+        }}
       >
+        <ResponsiveContent kind="form">
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Close Premium screen"
           onPress={closePaywall}
           className="self-end px-2 py-2 mb-2 active:opacity-60"
+          hitSlop={4}
+          style={{
+            minHeight: responsive.isTablet ? responsive.scaleControl(44) : undefined,
+            justifyContent: 'center',
+          }}
         >
           <Text className="text-ink-300 text-sm">Close</Text>
         </Pressable>
 
         <View className="items-center gap-y-3 mb-8">
-          <SparklesIcon size={26} color="#5A7A5A" />
+          <SparklesIcon size={responsive.scaleControl(26)} color="#5A7A5A" />
           <Text className="text-2xl font-semibold text-ink-900 text-center">Grow your Khushu with Premium</Text>
           <View className="flex-row items-center gap-x-1.5 rounded-full bg-white px-4 py-2">
             <Text className="text-ink-500 text-sm">Less than a cup of coffee</Text>
-            <Coffee size={16} color="#6B6360" />
+            <Coffee size={responsive.scaleControl(16)} color="#6B6360" />
           </View>
         </View>
 
@@ -302,8 +297,12 @@ export default function PaywallScreen() {
             <View
               key={title}
               className={`px-5 py-4 flex-row gap-x-4 items-start${index < premiumFeatures.length - 1 ? ' border-b border-sand-100' : ''}`}
+              style={{
+                paddingHorizontal: responsive.isTablet ? responsive.scaleSpacing(20) : undefined,
+                paddingVertical: responsive.isTablet ? responsive.scaleSpacing(16) : undefined,
+              }}
             >
-              <Icon size={20} color="#5A7A5A" style={{ marginTop: 2 }} />
+              <Icon size={responsive.scaleControl(20)} color="#5A7A5A" style={{ marginTop: 2 }} />
               <View className="flex-1">
                 <Text className="text-ink-700 font-medium text-sm">{title}</Text>
                 <Text className="text-ink-300 text-xs leading-relaxed mt-1">{description}</Text>
@@ -314,7 +313,7 @@ export default function PaywallScreen() {
 
         {isPremium ? (
           <View className="bg-white rounded-2xl border border-sand-200 p-5 items-center gap-y-3">
-            <CheckCircleIcon size={30} color="#5A7A5A" />
+            <CheckCircleIcon size={responsive.scaleControl(30)} color="#5A7A5A" />
             <Text className="text-ink-900 font-semibold text-lg">Premium is active</Text>
             <Text className="text-ink-300 text-sm text-center leading-relaxed">
               Your Premium access is linked to this Khushu account.
@@ -324,10 +323,12 @@ export default function PaywallScreen() {
               disabled={workingAction !== null}
               onPress={handleManageSubscription}
               className="bg-sage-600 py-4 rounded-2xl items-center self-stretch active:bg-sage-700"
+              style={{
+                minHeight: responsive.isTablet ? responsive.scaleControl(52) : undefined,
+                justifyContent: 'center',
+              }}
             >
-              {workingAction === 'manage'
-                ? <ActivityIndicator color="#FFFFFF" />
-                : <Text className="text-pure-white font-semibold text-base">Manage subscription</Text>}
+              <Text className="text-pure-white font-semibold text-base">Manage subscription</Text>
             </Pressable>
           </View>
         ) : loadState === 'loading' || (userId && premiumStatus === 'unknown') ? (
@@ -342,6 +343,10 @@ export default function PaywallScreen() {
               accessibilityRole="button"
               onPress={loadOffering}
               className="bg-sage-600 py-3.5 rounded-2xl items-center self-stretch active:bg-sage-700"
+              style={{
+                minHeight: responsive.isTablet ? responsive.scaleControl(48) : undefined,
+                justifyContent: 'center',
+              }}
             >
               <Text className="text-pure-white font-semibold text-sm">Try again</Text>
             </Pressable>
@@ -350,6 +355,11 @@ export default function PaywallScreen() {
               disabled={workingAction !== null}
               onPress={handleRestore}
               className="py-2 px-4 active:opacity-60"
+              hitSlop={4}
+              style={{
+                minHeight: responsive.isTablet ? responsive.scaleControl(44) : undefined,
+                justifyContent: 'center',
+              }}
             >
               <Text className="text-sage-600 text-sm font-medium">
                 {userId ? 'Restore purchases' : 'Sign in to restore'}
@@ -379,6 +389,11 @@ export default function PaywallScreen() {
                     className={`mb-3 rounded-2xl border px-5 py-4 flex-row items-center gap-x-3 ${
                       selected ? 'border-sage-600 bg-white' : 'border-sand-200 bg-white'
                     }`}
+                    style={{
+                      minHeight: responsive.isTablet ? responsive.scaleControl(68) : undefined,
+                      paddingHorizontal: responsive.isTablet ? responsive.scaleSpacing(20) : undefined,
+                      paddingVertical: responsive.isTablet ? responsive.scaleSpacing(16) : undefined,
+                    }}
                   >
                     <View className={`w-5 h-5 rounded-full border items-center justify-center ${
                       selected ? 'border-sage-600' : 'border-sand-300'
@@ -418,6 +433,10 @@ export default function PaywallScreen() {
                   ? 'bg-sage-600 active:bg-sage-700'
                   : 'bg-sand-200'
               }`}
+              style={{
+                minHeight: responsive.isTablet ? responsive.scaleControl(52) : undefined,
+                justifyContent: 'center',
+              }}
             >
               {workingAction === 'purchase' ? <ActivityIndicator color="#FFFFFF" /> : (
                 <Text className={`font-semibold text-base ${
@@ -449,6 +468,10 @@ export default function PaywallScreen() {
               disabled={workingAction !== null}
               onPress={handleRestore}
               className="items-center py-3 active:opacity-60"
+              style={{
+                minHeight: responsive.isTablet ? responsive.scaleControl(44) : undefined,
+                justifyContent: 'center',
+              }}
             >
               {workingAction === 'restore'
                 ? <ActivityIndicator color="#5A7A5A" size="small" />
@@ -483,6 +506,7 @@ export default function PaywallScreen() {
             </Text>
           )}
         </View>
+        </ResponsiveContent>
       </ScrollView>
 
       <AppDialog

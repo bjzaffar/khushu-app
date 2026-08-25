@@ -1,11 +1,13 @@
 import { AppState, View, Pressable, ScrollView, Modal, ActivityIndicator, InteractionManager, Linking, Platform, NativeModules, type LayoutChangeEvent } from 'react-native';
 import { Text } from '@/components/ui/Typography';
+import { ResponsiveContent } from '@/components/responsive/ResponsiveContent';
+import { useResponsiveLayout } from '@/components/responsive/ResponsiveLayout';
 import { AppDialog, type AppDialogTone } from '@/components/ui/AppDialog';
 import { ArrowRightIcon, InformationCircleIcon } from 'react-native-heroicons/outline';
 import { CheckIcon } from 'react-native-heroicons/solid';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useCallback, useEffect, useRef, useState, type ComponentProps } from 'react';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, type Href } from 'expo-router';
 import { useScrollToTop } from '@react-navigation/native';
 import { useColorScheme } from 'nativewind';
 import Animated, {
@@ -41,7 +43,7 @@ import {
 } from '@/lib/notifications/notificationService';
 import { CALCULATION_METHODS, type CalculationMethodKey, type AsrMadhab, type PrayerTimes } from '@/types';
 import { WheelPicker } from '@/components/ui/WheelPicker';
-import { clearRevenueCatUser, openRevenueCatCustomerCenter } from '@/lib/revenuecat/service';
+import { clearRevenueCatUser } from '@/lib/revenuecat/service';
 import { resetToAppRoot } from '@/lib/navigation';
 import { clearNativeGoogleSignInSession } from '@/lib/auth/googleSignIn';
 import { shouldUseDarkAutoTheme } from '@/lib/theme/colors';
@@ -88,31 +90,33 @@ function ImmediateReleasePressable({ onPress, onTouchEnd, ...props }: ImmediateR
 
 function ToggleIndicator({ value }: { value: boolean }) {
   const darkMode = useAppStore((state) => state.darkMode);
+  const responsive = useResponsiveLayout();
+  const scale = responsive.scaleControl;
 
   return (
     <View
       pointerEvents="none"
-      style={{ width: 50, height: 32, position: 'relative' }}
+      style={{ width: scale(50), height: scale(32), position: 'relative' }}
     >
       <View
         style={{
           position: 'absolute',
-          left: 7,
-          top: 7,
-          width: 36,
-          height: 18,
-          borderRadius: 9,
+          left: scale(7),
+          top: scale(7),
+          width: scale(36),
+          height: scale(18),
+          borderRadius: scale(9),
           backgroundColor: value ? '#5A7A5A' : darkMode ? '#292F29' : '#EFE8D8',
         }}
       />
       <View
         style={{
           position: 'absolute',
-          left: value ? 25 : 3,
-          top: 5,
-          width: 22,
-          height: 22,
-          borderRadius: 11,
+          left: scale(value ? 25 : 3),
+          top: scale(5),
+          width: scale(22),
+          height: scale(22),
+          borderRadius: scale(11),
           backgroundColor: '#FFFFFF',
           shadowColor: '#000000',
           shadowOffset: { width: 0, height: 1 },
@@ -141,6 +145,7 @@ function ToggleRow({
   showDivider = false,
 }: ToggleRowProps) {
   const [isTouched, setIsTouched] = useState(false);
+  const responsive = useResponsiveLayout();
 
   return (
     <ImmediateReleasePressable
@@ -154,6 +159,11 @@ function ToggleRow({
       className={`px-5 py-4 flex-row justify-between items-center ${
         isTouched ? 'bg-sand-100' : ''
       } ${showDivider ? 'border-b border-sand-100' : ''}`}
+      style={{
+        minHeight: responsive.isTablet ? responsive.scaleControl(60) : undefined,
+        paddingHorizontal: responsive.isTablet ? responsive.scaleSpacing(20) : undefined,
+        paddingVertical: responsive.isTablet ? responsive.scaleSpacing(16) : undefined,
+      }}
     >
       <View pointerEvents="none" className="flex-1 pr-4">
         <Text className="text-ink-700 font-medium text-sm">{label}</Text>
@@ -179,10 +189,18 @@ function ChoiceRow<T extends string>({
   onValueChange: (value: T) => void;
   showDivider?: boolean;
 }) {
+  const responsive = useResponsiveLayout();
   return (
-    <View className={`px-5 py-4 flex-row items-center justify-between gap-x-3 ${showDivider ? 'border-b border-sand-100' : ''}`}>
+    <View
+      className={`px-5 py-4 flex-row items-center justify-between gap-x-3 ${showDivider ? 'border-b border-sand-100' : ''}`}
+      style={{
+        minHeight: responsive.isTablet ? responsive.scaleControl(60) : undefined,
+        paddingHorizontal: responsive.isTablet ? responsive.scaleSpacing(20) : undefined,
+        paddingVertical: responsive.isTablet ? responsive.scaleSpacing(16) : undefined,
+      }}
+    >
       <Text className="text-ink-700 font-medium text-sm flex-1">{label}</Text>
-      <View className="flex-row rounded-xl bg-sand-200 p-1" style={{ width: 160 }}>
+      <View className="flex-row rounded-xl bg-sand-200 p-1" style={{ width: responsive.scaleControl(160) }}>
         {options.map((option) => {
           const selected = option.value === value;
           return (
@@ -194,6 +212,8 @@ function ChoiceRow<T extends string>({
               className="flex-1 px-2 py-2 rounded-lg items-center"
               style={{
                 backgroundColor: selected ? '#5A7A5A' : 'transparent',
+                minHeight: responsive.isTablet ? responsive.scaleControl(44) : undefined,
+                justifyContent: 'center',
               }}
             >
               <Text className={`text-xs font-semibold ${selected ? 'text-pure-white' : 'text-ink-900'}`}>
@@ -340,6 +360,7 @@ function saveSettingAfterInteraction(key: string, value: string) {
 }
 
 export default function SettingsScreen() {
+  const responsive = useResponsiveLayout();
   const {
     reminderMinutesBefore, setReminderMinutesBefore,
     postSalahPromptEnabled, setPostSalahPromptEnabled,
@@ -885,7 +906,16 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-sand-100">
-      <ScrollView ref={scrollRef} className="flex-1" contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 }} scrollEnabled={!wheelActive}>
+      <ScrollView
+        ref={scrollRef}
+        className="flex-1"
+        contentContainerStyle={{
+          paddingTop: responsive.scaleSpacing(24),
+          paddingBottom: responsive.scaleSpacing(40),
+        }}
+        scrollEnabled={!wheelActive}
+      >
+        <ResponsiveContent>
         <View className="flex-row items-center justify-between mb-6">
           <Text className="text-2xl font-semibold text-ink-900">Settings</Text>
           <Pressable
@@ -1181,11 +1211,7 @@ export default function SettingsScreen() {
                   </View>
                 </View>
                 <Pressable
-                  onPress={() => {
-                    openRevenueCatCustomerCenter().catch((error) =>
-                      console.warn('[revenuecat] customer center failed:', error)
-                    );
-                  }}
+                  onPress={() => router.push('/settings/manage-subscription' as Href)}
                   className="px-5 py-4 flex-row justify-between items-center border-b border-sand-100 active:bg-sand-100"
                 >
                   <Text className="text-ink-700 font-medium text-sm">Manage subscription</Text>
@@ -1266,6 +1292,7 @@ export default function SettingsScreen() {
           </View>
         )}
 
+        </ResponsiveContent>
       </ScrollView>
 
       {/* ── Sign Out Confirmation Modal ────────────────────────────────── */}
@@ -1277,7 +1304,10 @@ export default function SettingsScreen() {
         navigationBarTranslucent
         onRequestClose={() => setShowAppInfo(false)}
       >
-        <View className="flex-1 items-center justify-center px-5 py-8">
+        <View
+          className="flex-1 items-center justify-center py-8"
+          style={{ paddingHorizontal: responsive.isTablet ? responsive.gutter : 17.5 }}
+        >
           <Pressable
             accessibilityRole="none"
             className="absolute inset-0 bg-black/40"
@@ -1285,9 +1315,10 @@ export default function SettingsScreen() {
           />
           <View
             accessibilityViewIsModal
-            className="bg-white border border-sand-200 rounded-3xl px-6 pt-6 pb-5 w-full max-w-sm"
+            className="bg-white border border-sand-200 rounded-3xl px-6 pt-6 pb-5 w-full"
             style={{
               height: '65%',
+              maxWidth: responsive.isTablet ? responsive.maxWidths.dialog : 336,
               shadowColor: '#1A1917',
               shadowOffset: { width: 0, height: 12 },
               shadowOpacity: 0.16,
@@ -1356,6 +1387,9 @@ export default function SettingsScreen() {
             <Pressable
               onPress={() => setShowAppInfo(false)}
               className="mt-5 min-h-12 py-3 rounded-2xl bg-sage-600 active:bg-sage-700 items-center justify-center"
+              style={{
+                minHeight: responsive.isTablet ? responsive.scaleControl(48) : undefined,
+              }}
             >
               <Text className="text-pure-white text-sm font-semibold">Got it</Text>
             </Pressable>

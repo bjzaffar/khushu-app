@@ -2,6 +2,7 @@ import '../global.css';
 import { useEffect, useRef, useState } from 'react';
 import { AppState, View } from 'react-native';
 import { Text } from '@/components/ui/Typography';
+import { ResponsiveLayoutProvider } from '@/components/responsive/ResponsiveLayout';
 import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useColorScheme } from 'nativewind';
@@ -460,26 +461,29 @@ export default function RootLayout() {
 
   return (
     <AnalyticsProvider>
-      <SafeAreaProvider>
-        <View className="flex-1 bg-sand-100">
-          <GestureHandlerRootView style={{ flex: 1, backgroundColor: 'transparent' }}>
-            <StatusBar style={darkMode ? 'light' : 'dark'} />
-            <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: 'transparent' } }}>
-              {hasCompletedOnboarding ? (
-                <Stack.Screen name="(tabs)" />
-              ) : (
-                <Stack.Screen name="onboarding" />
-              )}
-              <Stack.Screen name="auth/callback" />
-              <Stack.Screen name="settings/change-password" />
-              <Stack.Screen name="dev" options={{ presentation: 'modal' }} />
-              <Stack.Screen name="salah-mode" options={{ presentation: 'fullScreenModal' }} />
-              <Stack.Screen name="paywall" options={{ presentation: 'modal' }} />
-              <Stack.Screen name="+not-found" />
-            </Stack>
-          </GestureHandlerRootView>
-        </View>
-      </SafeAreaProvider>
+      <ResponsiveLayoutProvider>
+        <SafeAreaProvider>
+          <View className="flex-1 bg-sand-100">
+            <GestureHandlerRootView style={{ flex: 1, backgroundColor: 'transparent' }}>
+              <StatusBar style={darkMode ? 'light' : 'dark'} />
+              <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: 'transparent' } }}>
+                {hasCompletedOnboarding ? (
+                  <Stack.Screen name="(tabs)" />
+                ) : (
+                  <Stack.Screen name="onboarding" />
+                )}
+                <Stack.Screen name="auth/callback" />
+                <Stack.Screen name="settings/change-password" />
+                <Stack.Screen name="settings/manage-subscription" />
+                <Stack.Screen name="dev" options={{ presentation: 'modal' }} />
+                <Stack.Screen name="salah-mode" options={{ presentation: 'fullScreenModal' }} />
+                <Stack.Screen name="paywall" options={{ presentation: 'modal' }} />
+                <Stack.Screen name="+not-found" />
+              </Stack>
+            </GestureHandlerRootView>
+          </View>
+        </SafeAreaProvider>
+      </ResponsiveLayoutProvider>
     </AnalyticsProvider>
   );
 }

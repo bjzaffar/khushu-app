@@ -10,6 +10,8 @@ import {
   type FocusEvent,
 } from 'react-native';
 import { Text, TextInput } from '@/components/ui/Typography';
+import { ResponsiveContent } from '@/components/responsive/ResponsiveContent';
+import { useResponsiveLayout } from '@/components/responsive/ResponsiveLayout';
 import { AppDialog } from '@/components/ui/AppDialog';
 import {
   BookmarkIcon,
@@ -104,6 +106,7 @@ function getSettingJSON(key: string): unknown[] {
 }
 
 export default function LogScreen() {
+  const responsive = useResponsiveLayout();
   const theme = useThemeColors();
   const params = useLocalSearchParams<{ salah?: string; fromSalahMode?: string }>();
   const { todaysPrayerTimes, userId, logTabReselectionVersion } = useAppStore();
@@ -701,13 +704,13 @@ export default function LogScreen() {
               className="border border-sand-300 py-3 px-6 rounded-2xl active:bg-sand-200"
               onPress={handleLogAnother}
             >
-              <Text className="text-ink-500 font-medium">Log Another</Text>
+              <Text className="text-ink-500 font-medium" style={{ fontSize: 14 }}>Log Another</Text>
             </Pressable>
             <Pressable
               className="bg-sage-600 py-3 px-6 rounded-2xl active:bg-sage-700"
               onPress={() => router.replace('/(tabs)')}
             >
-              <Text className="text-pure-white font-medium">Done</Text>
+              <Text className="text-pure-white font-medium" style={{ fontSize: 14 }}>Done</Text>
             </Pressable>
           </View>
         </View>
@@ -725,7 +728,10 @@ export default function LogScreen() {
         <ScrollView
           ref={scrollRef}
           className="flex-1"
-          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 }}
+          contentContainerStyle={{
+            paddingTop: responsive.scaleSpacing(24),
+            paddingBottom: responsive.scaleSpacing(40),
+          }}
           keyboardShouldPersistTaps="handled"
           scrollEnabled={!isRatingGestureActive}
           onScroll={(event) => {
@@ -733,6 +739,7 @@ export default function LogScreen() {
           }}
           scrollEventThrottle={16}
         >
+          <ResponsiveContent>
           <Text className="text-2xl font-semibold text-ink-900 mb-5">Log Salah</Text>
 
           <View className="mb-7">
@@ -746,6 +753,11 @@ export default function LogScreen() {
                 <Pressable
                   onPress={() => transitionToDay('yesterday')}
                   className="absolute left-0 top-0 w-10 h-10 rounded-full bg-white items-center justify-center"
+                  hitSlop={5}
+                  style={{
+                    width: responsive.isTablet ? responsive.scaleControl(44) : 35,
+                    height: responsive.isTablet ? responsive.scaleControl(44) : 35,
+                  }}
                   accessibilityRole="button"
                   accessibilityLabel="Show yesterday"
                 >
@@ -756,6 +768,11 @@ export default function LogScreen() {
                 <Pressable
                   onPress={() => transitionToDay('today')}
                   className="absolute right-0 top-0 w-10 h-10 rounded-full bg-white items-center justify-center"
+                  hitSlop={5}
+                  style={{
+                    width: responsive.isTablet ? responsive.scaleControl(44) : 35,
+                    height: responsive.isTablet ? responsive.scaleControl(44) : 35,
+                  }}
                   accessibilityRole="button"
                   accessibilityLabel="Show today"
                 >
@@ -844,8 +861,8 @@ export default function LogScreen() {
                     className="items-center gap-y-1"
                   >
                     {n <= focusRating
-                      ? <StarSolidIcon size={30} color="#5A7A5A" />
-                      : <StarIcon size={30} color={theme.borderStrong} />}
+                      ? <StarSolidIcon size={responsive.scaleControl(30)} color="#5A7A5A" />
+                      : <StarIcon size={responsive.scaleControl(30)} color={theme.borderStrong} />}
                     <Text className="text-ink-300 text-xs">{n}</Text>
                   </View>
                 ))}
@@ -1171,6 +1188,7 @@ export default function LogScreen() {
           </Pressable>
             </>
           )}
+          </ResponsiveContent>
         </ScrollView>
       </SafeAreaView>
 
@@ -1189,13 +1207,15 @@ export default function LogScreen() {
         >
           <Pressable
             accessibilityRole="none"
-            className="flex-1 bg-black/40 items-center justify-center px-6"
+            className="flex-1 bg-black/40 items-center justify-center"
+            style={{ paddingHorizontal: responsive.isTablet ? responsive.gutter : 21 }}
             onPress={closeDistractionNameEditor}
           >
             <Pressable
               accessibilityViewIsModal
-              className="bg-white border border-sand-200 rounded-3xl px-6 pt-6 pb-5 w-full max-w-sm"
+              className="bg-white border border-sand-200 rounded-3xl px-6 pt-6 pb-5 w-full"
               style={{
+                maxWidth: responsive.isTablet ? responsive.maxWidths.dialog : 336,
                 shadowColor: '#1A1917',
                 shadowOffset: { width: 0, height: 12 },
                 shadowOpacity: 0.16,

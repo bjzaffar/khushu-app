@@ -6,6 +6,7 @@ import {
 } from 'react-native-heroicons/outline';
 import { Text } from './Typography';
 import { useThemeColors } from '@/lib/theme/colors';
+import { useResponsiveLayout } from '@/components/responsive/ResponsiveLayout';
 
 export type AppDialogTone = 'info' | 'success' | 'warning' | 'destructive';
 export type AppDialogActionTone = 'primary' | 'secondary' | 'destructive';
@@ -55,6 +56,7 @@ export function AppDialog({
   showIcon = true,
 }: AppDialogProps) {
   const theme = useThemeColors();
+  const responsive = useResponsiveLayout();
   const { Icon, icon, circle } = toneStyles[tone];
   const horizontalActions = actionLayout === 'horizontal'
     || (actionLayout === 'auto' && actions.length === 2);
@@ -70,13 +72,18 @@ export function AppDialog({
     >
       <Pressable
         accessibilityRole="none"
-        className="flex-1 bg-black/40 items-center justify-center px-6"
+        className="flex-1 bg-black/40 items-center justify-center"
+        style={{ paddingHorizontal: responsive.isTablet ? responsive.gutter : 21 }}
         onPress={dismissible ? onDismiss : undefined}
       >
         <Pressable
           accessibilityViewIsModal
-          className="bg-white border border-sand-200 rounded-3xl px-6 pt-6 pb-5 w-full max-w-sm"
+          className="bg-white border border-sand-200 rounded-3xl w-full"
           style={{
+            maxWidth: responsive.isTablet ? responsive.maxWidths.dialog : 336,
+            paddingHorizontal: responsive.isTablet ? responsive.scaleSpacing(24) : 21,
+            paddingTop: responsive.isTablet ? responsive.scaleSpacing(24) : 21,
+            paddingBottom: responsive.isTablet ? responsive.scaleSpacing(20) : 17.5,
             shadowColor: '#1A1917',
             shadowOffset: { width: 0, height: 12 },
             shadowOpacity: 0.16,
@@ -86,8 +93,14 @@ export function AppDialog({
           onPress={(event) => event.stopPropagation()}
         >
           {showIcon && (
-            <View className={`w-12 h-12 rounded-full ${circle} items-center justify-center self-center mb-4`}>
-              <Icon size={24} color={icon} />
+            <View
+              className={`rounded-full ${circle} items-center justify-center self-center mb-4`}
+              style={{
+                width: responsive.isTablet ? responsive.scaleControl(48) : 42,
+                height: responsive.isTablet ? responsive.scaleControl(48) : 42,
+              }}
+            >
+              <Icon size={responsive.scaleControl(24)} color={icon} />
             </View>
           )}
 
@@ -110,6 +123,9 @@ export function AppDialog({
                   disabled={action.disabled || action.loading}
                   onPress={action.onPress}
                   className={`${horizontalActions ? 'flex-1' : 'w-full'} min-h-12 px-3 py-3 rounded-2xl items-center justify-center ${styles.button} ${action.disabled ? 'opacity-50' : ''}`}
+                  style={{
+                    minHeight: responsive.isTablet ? responsive.scaleControl(48) : undefined,
+                  }}
                 >
                   {action.loading
                     ? <ActivityIndicator color={actionTone === 'secondary' ? theme.textSecondary : styles.spinner} />
