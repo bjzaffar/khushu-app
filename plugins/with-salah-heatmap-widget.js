@@ -138,7 +138,7 @@ function withSalahHeatmapWidget(config) {
     addSourceFile(project, `${appName}/WidgetBridge.swift`, appTarget.uuid, appGroupKey);
     addSourceFile(project, `${appName}/WidgetBridge.m`, appTarget.uuid, appGroupKey);
 
-    const widgetTarget = addWidgetTarget(project, modConfig.version || '1.4.1');
+    const widgetTarget = addWidgetTarget(project, modConfig.version || '1.4.2');
     const widgetGroupKey = ensureGroup(project, WIDGET_NAME);
     const widgetFiles = [
       'SalahHeatmapEntry.swift',

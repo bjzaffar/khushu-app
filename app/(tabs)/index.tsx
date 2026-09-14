@@ -1,4 +1,5 @@
 import {
+  AppState,
   InteractionManager,
   KeyboardAvoidingView,
   Modal,
@@ -50,6 +51,7 @@ import { salahLogs, settings } from '@/db/schema';
 import { eq, inArray } from 'drizzle-orm';
 import {
   requestNotificationPermissions,
+  cancelPreSalahReminders,
   cancelPostSalahReminders,
   schedulePostSalahPrompts,
   schedulePreSalahReminders,
@@ -57,6 +59,11 @@ import {
 } from '@/lib/notifications/notificationService';
 import { updateLogNoteEverywhere } from '@/lib/supabase/sync';
 import { useThemeColors } from '@/lib/theme/colors';
+import { AppDialog } from '@/components/ui/AppDialog';
+import {
+  canScheduleExactPrayerNotifications,
+  openExactAlarmSettings,
+} from '@/lib/notifications/exactAlarm';
 
 type SalahStatus = 'logged' | 'current' | 'upcoming' | 'past' | 'historical';
 
@@ -73,6 +80,7 @@ type OpenNote = {
 };
 
 const NOTE_MAX_LENGTH = 200;
+const EXACT_ALARM_PROMPT_SHOWN_KEY = 'exact_alarm_prompt_shown';
 
 const CUSTOM_DISTRACTION_SETTING_KEYS = [
   'custom_distraction_labels',
@@ -156,9 +164,12 @@ export default function HomeScreen() {
     isDbReady,
     todaysPrayerTimes,
     location,
+    locationLabel,
     calculationMethod,
     asrMadhab,
     reminderMinutesBefore,
+    preSalahReminderEnabled,
+    setPreSalahReminderEnabled,
     postSalahPromptEnabled,
     setPostSalahPromptEnabled,
     use24HourTime,
@@ -168,17 +179,21 @@ export default function HomeScreen() {
     clearSignInSuccessNotice,
   } = useAppStore();
   const [selectedDate, setSelectedDate] = useState(() => localCalendarDate(new Date()));
-  const [selectedLogs, setSelectedLogs] = useState<Record<string, HomeSalahLog>>({});
+  const [selectedLogs, setSelectedLogs] = useState<Record<string, HomeSalahLog>>(() =>
+    loadHomeLogs(toLocalDateKey(new Date()))
+  );
   const [notificationsGranted, setNotificationsGranted] = useState(false);
   const [openNote, setOpenNote] = useState<OpenNote | null>(null);
   const [isEditingNote, setIsEditingNote] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
   const [showSignInSuccess, setShowSignInSuccess] = useState(false);
+  const [showExactAlarmDialog, setShowExactAlarmDialog] = useState(false);
   const noteInputRef = useRef<NativeTextInput>(null);
   const scrollRef = useRef<ScrollView>(null);
   const hasRequestedNotifications = useRef(false);
   const hasScheduledInitialReminders = useRef(false);
   const lastHomeTabReselection = useRef(homeTabReselectionVersion);
+  const exactAlarmSettingsOpened = useRef(false);
 
   const [now, setNow] = useState(() => new Date());
   const today = localCalendarDate(now);
@@ -206,19 +221,75 @@ export default function HomeScreen() {
       const granted = await requestNotificationPermissions();
       setNotificationsGranted(granted);
       if (!granted) {
+        setPreSalahReminderEnabled(false);
+        db.insert(settings)
+          .values({ key: 'pre_salah_reminder_enabled', value: 'false' })
+          .onConflictDoUpdate({ target: settings.key, set: { value: 'false' } })
+          .run();
         setPostSalahPromptEnabled(false);
         db.insert(settings)
           .values({ key: 'post_salah_prompt_enabled', value: 'false' })
           .onConflictDoUpdate({ target: settings.key, set: { value: 'false' } })
           .run();
-        await cancelPostSalahReminders();
+        await Promise.all([cancelPreSalahReminders(), cancelPostSalahReminders()]);
+        return;
+      }
+
+      const usesPrayerNotifications = preSalahReminderEnabled || postSalahPromptEnabled;
+      if (Platform.OS === 'android' && usesPrayerNotifications) {
+        const canScheduleExactly = await canScheduleExactPrayerNotifications();
+        const promptShown = db
+          .select({ value: settings.value })
+          .from(settings)
+          .where(eq(settings.key, EXACT_ALARM_PROMPT_SHOWN_KEY))
+          .get()?.value === 'true';
+
+        if (canScheduleExactly === false && !promptShown) {
+          db.insert(settings)
+            .values({ key: EXACT_ALARM_PROMPT_SHOWN_KEY, value: 'true' })
+            .onConflictDoUpdate({ target: settings.key, set: { value: 'true' } })
+            .run();
+          setShowExactAlarmDialog(true);
+        }
       }
     }
 
     requestInitialNotificationPermission().catch((error) =>
       console.warn('[notifications] initial permission request failed:', error)
     );
-  }, [isDbReady, setPostSalahPromptEnabled, showSignInSuccess, showSignInSuccessNotice]);
+  }, [
+    isDbReady,
+    preSalahReminderEnabled,
+    postSalahPromptEnabled,
+    reminderMinutesBefore,
+    setPreSalahReminderEnabled,
+    setPostSalahPromptEnabled,
+    showSignInSuccess,
+    showSignInSuccessNotice,
+  ]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active' && exactAlarmSettingsOpened.current) {
+        exactAlarmSettingsOpened.current = false;
+        setShowExactAlarmDialog(false);
+      }
+    });
+    return () => subscription.remove();
+  }, []);
+
+  async function openPreciseTimingSettings() {
+    setShowExactAlarmDialog(false);
+    exactAlarmSettingsOpened.current = true;
+    try {
+      await openExactAlarmSettings();
+    } catch (error) {
+      exactAlarmSettingsOpened.current = false;
+      setShowExactAlarmDialog(true);
+      console.warn('[notifications] Could not open exact-alarm settings:', error);
+    }
+  }
 
   // On a first sign-in, Home mounts while the root navigator is still
   // transitioning away from onboarding. Wait until Home is focused and that
@@ -249,14 +320,21 @@ export default function HomeScreen() {
     const prayerTimes = todaysPrayerTimes;
 
     async function scheduleInitialReminders() {
-      await schedulePreSalahReminders(prayerTimes, reminderMinutesBefore);
+      if (preSalahReminderEnabled) await schedulePreSalahReminders(prayerTimes, reminderMinutesBefore);
+      else await cancelPreSalahReminders();
       if (postSalahPromptEnabled) await schedulePostSalahPrompts(prayerTimes);
     }
 
     scheduleInitialReminders().catch((error) =>
       console.warn('[notifications] initial reminder scheduling failed:', error)
     );
-  }, [notificationsGranted, postSalahPromptEnabled, reminderMinutesBefore, todaysPrayerTimes]);
+  }, [
+    notificationsGranted,
+    preSalahReminderEnabled,
+    postSalahPromptEnabled,
+    reminderMinutesBefore,
+    todaysPrayerTimes,
+  ]);
 
   const transitionToDate = useCallback((nextDate: Date) => {
     const normalizedDate = localCalendarDate(nextDate);
@@ -367,7 +445,7 @@ export default function HomeScreen() {
   }, [isEditingNote, openNote]);
 
   return (
-    <SafeAreaView className="flex-1 bg-sand-100">
+    <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-sand-100">
       <ScrollView
         ref={scrollRef}
         className="flex-1"
@@ -378,7 +456,9 @@ export default function HomeScreen() {
       >
         <ResponsiveContent>
         <View className="mb-6">
-          <Text className="text-2xl font-semibold text-ink-900">Today</Text>
+          <Text className="text-2xl font-semibold text-ink-900">
+            {location ? locationLabel ?? 'Saved location' : 'Enable location in settings'}
+          </Text>
           <Text className="text-ink-300 text-sm mt-1">{formatLongLocalDate(now)}</Text>
         </View>
 
@@ -481,6 +561,20 @@ export default function HomeScreen() {
             </View>
           </View>
         </Modal>
+      )}
+
+      {showExactAlarmDialog && (
+        <AppDialog
+          visible
+          title="Keep prayer reminders on time"
+          message="Android may delay prayer reminders unless Khushu can set exact alarms. On the next screen, allow Khushu to set alarms and reminders."
+          tone="info"
+          onDismiss={() => setShowExactAlarmDialog(false)}
+          actions={[
+            { label: 'Not now', tone: 'secondary', onPress: () => setShowExactAlarmDialog(false) },
+            { label: 'Open settings', onPress: () => void openPreciseTimingSettings() },
+          ]}
+        />
       )}
 
       <Modal

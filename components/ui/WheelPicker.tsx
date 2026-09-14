@@ -16,11 +16,20 @@ interface Props {
   selectedValue: number;
   onValueChange: (val: number) => void;
   formatValue?: (val: number) => string;
+  enabled?: boolean;
   onTouchStart?: () => void;
   onTouchEnd?: () => void;
 }
 
-export function WheelPicker({ values, selectedValue, onValueChange, formatValue, onTouchStart, onTouchEnd }: Props) {
+export function WheelPicker({
+  values,
+  selectedValue,
+  onValueChange,
+  formatValue,
+  enabled = true,
+  onTouchStart,
+  onTouchEnd,
+}: Props) {
   const responsive = useResponsiveLayout();
   const itemHeight = responsive.scaleControl(ITEM_HEIGHT);
   const scrollRef = useRef<ScrollView>(null);
@@ -83,9 +92,10 @@ export function WheelPicker({ values, selectedValue, onValueChange, formatValue,
   return (
     <View
       style={{ height: itemHeight * VISIBLE_ITEMS, position: 'relative' }}
-      onTouchStart={onTouchStart}
-      onTouchEnd={onTouchEnd}
-      onTouchCancel={onTouchEnd}
+      pointerEvents={enabled ? 'auto' : 'none'}
+      onTouchStart={enabled ? onTouchStart : undefined}
+      onTouchEnd={enabled ? onTouchEnd : undefined}
+      onTouchCancel={enabled ? onTouchEnd : undefined}
     >
       <View
         pointerEvents="none"
@@ -95,11 +105,11 @@ export function WheelPicker({ values, selectedValue, onValueChange, formatValue,
           left: 0,
           right: 0,
           height: itemHeight,
-          backgroundColor: 'rgba(90, 122, 90, 0.08)',
+          backgroundColor: enabled ? 'rgba(90, 122, 90, 0.08)' : 'rgba(155, 145, 137, 0.08)',
           borderRadius: 10,
           borderTopWidth: 1,
           borderBottomWidth: 1,
-          borderColor: 'rgba(90, 122, 90, 0.18)',
+          borderColor: enabled ? 'rgba(90, 122, 90, 0.18)' : 'rgba(155, 145, 137, 0.18)',
         }}
       />
       <ScrollView
@@ -108,6 +118,7 @@ export function WheelPicker({ values, selectedValue, onValueChange, formatValue,
         decelerationRate="fast"
         showsVerticalScrollIndicator={false}
         nestedScrollEnabled={true}
+        scrollEnabled={enabled}
         contentContainerStyle={{ paddingVertical: itemHeight * centerOffset }}
         onMomentumScrollBegin={clearPendingSettle}
         onMomentumScrollEnd={handleMomentumScrollEnd}
@@ -124,7 +135,9 @@ export function WheelPicker({ values, selectedValue, onValueChange, formatValue,
                 style={{
                   fontSize: selected ? 20 : 15,
                   fontWeight: selected ? '600' : '400',
-                  color: selected ? '#5A7A5A' : '#9B9189',
+                  color: enabled
+                    ? selected ? '#5A7A5A' : '#9B9189'
+                    : selected ? '#C7C1B8' : '#D8D2C8',
                 }}
               >
                 {formatValue ? formatValue(v) : String(v)}

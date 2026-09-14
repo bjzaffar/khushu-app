@@ -10,6 +10,7 @@ import { useAppStore } from '@/store/appStore';
 import { consumePendingAuthReturn } from '@/lib/authReturn';
 import { resetToAppRoot } from '@/lib/navigation';
 import { useThemeColors } from '@/lib/theme/colors';
+import { captureAnalyticsEvent, identifyAnalyticsUser } from '@/lib/analytics/posthog';
 
 function parseParams(str: string): Record<string, string> {
   const params: Record<string, string> = {};
@@ -134,8 +135,21 @@ export default function AuthCallbackScreen() {
           router.replace('/settings/change-password');
         } else {
           // OAuth and magic-link sign-ins finish outside the onboarding account
-          // screen, so persist their completion state here before entering tabs.
-          await SecureStore.setItemAsync('onboarding_complete', 'true');
+          // screen. Record a completion only when this callback actually
+          // finishes onboarding, not for a later account sign-in.
+          const onboardingAlreadyComplete =
+            await SecureStore.getItemAsync('onboarding_complete') === 'true';
+          if (!onboardingAlreadyComplete) {
+            // The auth listener normally does this too, but identify here so
+            // this event cannot race ahead of that asynchronous callback.
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.user) identifyAnalyticsUser(session.user.id);
+            await SecureStore.setItemAsync('onboarding_complete', 'true');
+            captureAnalyticsEvent('onboarding completed', {
+              account_type: 'registered',
+              provider: 'oauth_or_magic_link',
+            });
+          }
           useAppStore.getState().setHasCompletedOnboarding(true);
           const returnTo = await consumePendingAuthReturn();
           if (returnTo === 'paywall') router.dismissTo('/paywall');

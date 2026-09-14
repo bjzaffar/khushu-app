@@ -35,7 +35,7 @@ interface SalahInsight {
   salah: SalahName;
   displayName: string;
   topDistraction: { label: string; pct: number } | null;
-  trend: string | null; // null = < 6 logs, omit sentence
+  trend: string;
 }
 
 interface ReminderEffectivenessEntry {
@@ -143,9 +143,14 @@ function computeSalahInsights(
         }
       : null;
 
-    // Trend (requires ≥ 6 logs)
-    let trend: string | null = null;
-    if (rows.length >= 6) {
+    // Always provide context for a prayer's top distraction. A single log
+    // cannot establish a direction yet; from two logs onward, compare the
+    // earlier and recent parts of the available history.
+    const name = SALAH_DISPLAY_NAMES[salah];
+    let trend: string;
+    if (rows.length === 1) {
+      trend = `Keep logging your ${name} to see how your khushu changes over time.`;
+    } else {
       const window = rows.slice(-10);
       const mid = Math.floor(window.length / 2);
       const earlier = window.slice(0, mid);
@@ -153,7 +158,6 @@ function computeSalahInsights(
       const avgRating = (arr: typeof rows) =>
         arr.reduce((s, r) => s + r.focusRating, 0) / arr.length;
       const delta = avgRating(recent) - avgRating(earlier);
-      const name = SALAH_DISPLAY_NAMES[salah];
       if (delta >= 0.4) {
         trend = `Your ${name} khushu has been improving recently.`;
       } else if (delta <= -0.4) {
@@ -545,23 +549,22 @@ function SalahInsightCard({ item, isLast }: { item: SalahInsight; isLast: boolea
         borderBottomColor: C.sand100,
       }}
     >
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: item.trend ? 5 : 0 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
         <Text style={{ fontSize: 14, fontWeight: '600', color: C.ink700 }}>
           {item.displayName}
         </Text>
         {item.topDistraction ? (
           <Text style={{ fontSize: 12, color: C.ink400 }}>
-            {item.topDistraction.label} · {item.topDistraction.pct}%
+            <Text style={{ color: C.sage }}>{item.topDistraction.label}</Text>
+            {' · '}{item.topDistraction.pct}%
           </Text>
         ) : (
           <Text style={{ fontSize: 12, color: C.ink300 }}>No distractions logged</Text>
         )}
       </View>
-      {item.trend && (
-        <Text style={{ fontSize: 12, color: C.ink300, lineHeight: 18 }}>
-          {item.trend}
-        </Text>
-      )}
+      <Text style={{ fontSize: 12, color: C.ink300, lineHeight: 18 }}>
+        {item.trend}
+      </Text>
     </View>
   );
 }
@@ -761,6 +764,13 @@ export default function InsightsScreen() {
     setData({ totalLogs, weekLogs, salahAverages, topDistractions, salahInsights, reminderEffectiveness });
   }
 
+  // This tab is eagerly mounted by the navigator. Populate its SQLite-backed
+  // view model immediately while it is still off-screen, so the first visit
+  // cannot paint the empty state and then jump to the real layout.
+  useEffect(() => {
+    loadData();
+  }, []);
+
   // Reload stats + chart whenever screen comes into focus
   useFocusEffect(
     useCallback(() => {
@@ -780,7 +790,7 @@ export default function InsightsScreen() {
   const isEmpty = !data || data.totalLogs < 3;
 
   return (
-    <SafeAreaView className="flex-1 bg-sand-100">
+    <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-sand-100">
       <ScrollView
         ref={scrollRef}
         className="flex-1"

@@ -66,7 +66,7 @@ describe('custom-distraction fallback reminders', () => {
     expect(templates.cold_start.some(({ text }) => reminder.text.endsWith(text))).toBe(true);
   });
 
-  it('can select a different cold-start ending on another scheduling pass', () => {
+  it('keeps every custom fallback typed as short across different cold-start endings', () => {
     const random = vi.spyOn(Math, 'random');
     random.mockReturnValueOnce(0).mockReturnValueOnce(0.99);
 
@@ -74,6 +74,8 @@ describe('custom-distraction fallback reminders', () => {
     const second = getReminderContent(customPattern);
 
     expect(first.text).not.toBe(second.text);
+    expect(first.type).toBe('short');
+    expect(second.type).toBe('short');
     expect(first.text).toBe(`You've been struggling with "Noise". ${templates.cold_start[0].text}`);
     expect(second.text).toBe(
       `You've been struggling with "Noise". ${templates.cold_start.at(-1)!.text}`

@@ -20,6 +20,8 @@ interface AppState {
   // ── Location & Prayer Times ──────────────────────────────────────────────────
   location: Location | null;
   setLocation: (loc: Location) => void;
+  locationLabel: string | null;
+  setLocationLabel: (label: string | null) => void;
 
   todaysPrayerTimes: PrayerTimes | null;
   setTodaysPrayerTimes: (times: PrayerTimes) => void;
@@ -45,6 +47,8 @@ interface AppState {
   // ── Notification settings ────────────────────────────────────────────────────
   reminderMinutesBefore: number;
   setReminderMinutesBefore: (mins: number) => void;
+  preSalahReminderEnabled: boolean;
+  setPreSalahReminderEnabled: (val: boolean) => void;
   postSalahPromptEnabled: boolean;
   setPostSalahPromptEnabled: (val: boolean) => void;
 
@@ -89,6 +93,8 @@ export const useAppStore = create<AppState>((set) => ({
   // Location & prayer times
   location: null,
   setLocation: (loc) => set({ location: loc }),
+  locationLabel: null,
+  setLocationLabel: (locationLabel) => set({ locationLabel }),
   todaysPrayerTimes: null,
   setTodaysPrayerTimes: (times) => set({ todaysPrayerTimes: times }),
   homeTabReselectionVersion: 0,
@@ -112,6 +118,8 @@ export const useAppStore = create<AppState>((set) => ({
   // Notifications
   reminderMinutesBefore: 10,
   setReminderMinutesBefore: (mins) => set({ reminderMinutesBefore: mins }),
+  preSalahReminderEnabled: true,
+  setPreSalahReminderEnabled: (val) => set({ preSalahReminderEnabled: val }),
   postSalahPromptEnabled: true,
   setPostSalahPromptEnabled: (val) => set({ postSalahPromptEnabled: val }),
 

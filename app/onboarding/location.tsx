@@ -11,10 +11,11 @@ import { db } from '@/db/database';
 import { settings } from '@/db/schema';
 import { OnboardingFrame } from '@/components/responsive/OnboardingFrame';
 import { useResponsiveLayout } from '@/components/responsive/ResponsiveLayout';
+import { LOCATION_LABEL_SETTING_KEY, resolveLocationLabel } from '@/lib/location/locationLabel';
 
 export default function OnboardingLocation() {
   const responsive = useResponsiveLayout();
-  const { setLocation, setTodaysPrayerTimes } = useAppStore();
+  const { setLocation, setLocationLabel, setTodaysPrayerTimes } = useAppStore();
   const [status, setStatus] = useState<'idle' | 'loading' | 'denied' | 'blocked' | 'error'>('idle');
   const settingsOpenedRef = useRef(false);
   const appLeftForSettingsRef = useRef(false);
@@ -65,6 +66,11 @@ export default function OnboardingLocation() {
       db.insert(settings).values({ key: 'location_lng', value: String(coords.longitude) })
         .onConflictDoUpdate({ target: settings.key, set: { value: String(coords.longitude) } }).run();
 
+      const label = await resolveLocationLabel(coords);
+      setLocationLabel(label);
+      db.insert(settings).values({ key: LOCATION_LABEL_SETTING_KEY, value: label ?? '' })
+        .onConflictDoUpdate({ target: settings.key, set: { value: label ?? '' } }).run();
+
       router.push('/onboarding/account');
     } catch {
       setStatus('error');
@@ -92,7 +98,7 @@ export default function OnboardingLocation() {
         {/* Header */}
         <View className="items-center gap-y-3">
           <MapPinIcon size={responsive.scaleControl(48)} color="#5A7A5A" />
-          <Text className="text-2xl font-semibold text-ink-900 text-center">
+          <Text className="text-2xl text-ink-900 text-center">
             Prayer times for your location
           </Text>
           <Text className="text-ink-300 text-sm text-center leading-relaxed mt-2">

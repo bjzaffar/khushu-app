@@ -51,12 +51,18 @@ import {
   type DistractionKey,
 } from '@/types';
 import { getCurrentSalahWindow } from '@/lib/prayer/prayerTimes';
+import { getPatternForSalah } from '@/lib/patterns/patternEngine';
 import { cancelPostSalahForSalah, cancelReEngagementNotification } from '@/lib/notifications/notificationService';
+import {
+  getLastOpenedReminderTypeKey,
+  resolveReminderTypeForLog,
+} from '@/lib/notifications/reminderAttribution';
 import {
   classifyDistraction,
   clearCachedReminder,
   completeAIReminderGeneration,
   generateAIReminder,
+  getCustomDistractionLabel,
   queueAIReminderGeneration,
 } from '@/lib/notifications/reminderContent';
 import { writeWidgetData } from '@/lib/widget/widgetData';
@@ -85,10 +91,25 @@ const DAY_LABELS: Record<LogDay, string> = {
   yesterday: 'Yesterday',
 };
 
+function getLogDayFromParam(day?: string): LogDay {
+  return day === 'yesterday' ? 'yesterday' : 'today';
+}
+
 function getLogDateForDay(day: LogDay): string {
   const date = new Date();
   if (day === 'yesterday') date.setDate(date.getDate() - 1);
   return toLocalDateKey(date);
+}
+
+function readLogsForDay(day: LogDay) {
+  const logs = db
+    .select()
+    .from(salahLogs)
+    .where(eq(salahLogs.logDate, getLogDateForDay(day)))
+    .all();
+  const map: Record<string, number> = {};
+  for (const log of logs) map[log.salahName] = log.focusRating;
+  return { logs, map };
 }
 
 function saveSettingJSON(key: string, value: unknown) {
@@ -108,7 +129,7 @@ function getSettingJSON(key: string): unknown[] {
 export default function LogScreen() {
   const responsive = useResponsiveLayout();
   const theme = useThemeColors();
-  const params = useLocalSearchParams<{ salah?: string; fromSalahMode?: string }>();
+  const params = useLocalSearchParams<{ salah?: string; day?: string; fromSalahMode?: string }>();
   const { todaysPrayerTimes, userId, logTabReselectionVersion } = useAppStore();
   const isPremium = useAppStore(selectIsPremium);
 
@@ -117,12 +138,7 @@ export default function LogScreen() {
       return params.salah as SalahName;
     }
     // Auto-select the first unlogged salah for the selected day.
-    const logDate = getLogDateForDay(day);
-    const logs = db
-      .select()
-      .from(salahLogs)
-      .where(eq(salahLogs.logDate, logDate))
-      .all();
+    const logs = readLogsForDay(day).logs;
     const loggedSet = new Set(logs.map((l) => l.salahName));
     const firstUnlogged = SALAH_NAMES.find((name) => !loggedSet.has(name));
     if (firstUnlogged) return firstUnlogged;
@@ -133,9 +149,11 @@ export default function LogScreen() {
     return 'fajr';
   }, [params.salah, todaysPrayerTimes]);
 
-  const [activeDay, setActiveDay] = useState<LogDay>('today');
-  const [selectedSalah, setSelectedSalah] = useState<SalahName>(() => resolveInitialSalah('today', true));
-  const lastIntentSalahRef = useRef<SalahName | null>(null);
+  const [activeDay, setActiveDay] = useState<LogDay>(() => getLogDayFromParam(params.day));
+  const [selectedSalah, setSelectedSalah] = useState<SalahName>(() => (
+    resolveInitialSalah(getLogDayFromParam(params.day), true)
+  ));
+  const lastIntentRef = useRef<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const scrollOffsetYRef = useRef(0);
   const lastLogTabReselection = useRef(logTabReselectionVersion);
@@ -153,10 +171,10 @@ export default function LogScreen() {
   const [deleteArchived, setDeleteArchived] = useState<{ key: string; label: string } | null>(null);
   const [editDistraction, setEditDistraction] = useState<{ key: string; label: string } | null>(null);
   const [distractionNameInput, setDistractionNameInput] = useState('');
-  const [logsByDay, setLogsByDay] = useState<Record<LogDay, Record<string, number>>>({
-    today: {},
-    yesterday: {},
-  });
+  const [logsByDay, setLogsByDay] = useState<Record<LogDay, Record<string, number>>>(() => ({
+    today: readLogsForDay('today').map,
+    yesterday: readLogsForDay('yesterday').map,
+  }));
   const [isRelogging, setIsRelogging] = useState(false);
 
   // Custom distraction state
@@ -257,16 +275,7 @@ export default function LogScreen() {
   }, []);
 
   const loadLogsForDay = useCallback((day: LogDay) => {
-    const logs = db
-      .select()
-      .from(salahLogs)
-      .where(eq(salahLogs.logDate, getLogDateForDay(day)))
-      .all();
-    const map: Record<string, number> = {};
-    for (const log of logs) {
-      map[log.salahName] = log.focusRating;
-    }
-    return { logs, map };
+    return readLogsForDay(day);
   }, []);
 
   const resetFormForDay = useCallback((day: LogDay, map?: Record<string, number>) => {
@@ -307,21 +316,24 @@ export default function LogScreen() {
       const today = loadLogsForDay('today');
       const yesterday = loadLogsForDay('yesterday');
       setLogsByDay({ today: today.map, yesterday: yesterday.map });
-      setActiveDay('today');
-      const loggedSet = new Set(today.logs.map((l) => l.salahName));
-      const firstUnlogged = SALAH_NAMES.find((name) => !loggedSet.has(name));
-
       const intentSalah =
         params.salah && SALAH_NAMES.includes(params.salah as SalahName)
           ? (params.salah as SalahName)
           : null;
+      const intentDay = getLogDayFromParam(params.day);
+      const targetDay = intentSalah ? intentDay : 'today';
+      const targetLogs = targetDay === 'today' ? today : yesterday;
+      const intentKey = intentSalah ? `${intentDay}:${intentSalah}` : null;
+
+      setActiveDay(targetDay);
 
       // New navigation intent (different from last consumed) — use it
-      if (intentSalah && lastIntentSalahRef.current !== intentSalah) {
+      if (intentSalah && lastIntentRef.current !== intentKey) {
+        resetFormForDay(targetDay, targetLogs.map);
         setSelectedSalah(intentSalah);
-        lastIntentSalahRef.current = intentSalah;
-      } else if (firstUnlogged) {
-        setSelectedSalah(firstUnlogged);
+        lastIntentRef.current = intentKey;
+      } else if (!intentSalah) {
+        resetFormForDay('today', today.map);
       }
 
       return () => {
@@ -338,7 +350,7 @@ export default function LogScreen() {
         setEditDistraction(null);
         setDistractionNameInput('');
       };
-    }, [loadLogsForDay, params.salah, resetFormForDay])
+    }, [loadLogsForDay, params.day, params.salah, resetFormForDay])
   );
 
   // Pressing the focused Log tab starts a fresh entry for today's first
@@ -568,12 +580,27 @@ export default function LogScreen() {
     const now = new Date();
     const logDate = getLogDateForDay(activeDay);
 
-    // Read which reminder style was shown before this Salah (if any)
+    // Prefer the reminder actually opened in Salah Mode. A notification can be
+    // prepared earlier with a different randomly selected style.
     const pendingKey = `pending_reminder_type_${selectedSalah}`;
     const pendingRow = activeDay === 'today'
       ? db.select().from(settings).where(eq(settings.key, pendingKey)).get()
       : null;
-    const reminderType = pendingRow?.value ?? null;
+    const salahModeSalah = params.salah && SALAH_NAMES.includes(params.salah as SalahName)
+      ? params.salah as SalahName
+      : null;
+    const openedTypeKey = getLastOpenedReminderTypeKey(selectedSalah);
+    const openedTypeRow = activeDay === 'today' && params.fromSalahMode === '1'
+      ? db.select().from(settings).where(eq(settings.key, openedTypeKey)).get()
+      : null;
+    const reminderType = resolveReminderTypeForLog({
+      isToday: activeDay === 'today',
+      fromSalahMode: params.fromSalahMode === '1',
+      selectedSalah,
+      salahModeSalah,
+      lastOpenedReminderType: openedTypeRow?.value,
+      pendingReminderType: pendingRow?.value,
+    });
 
     // Re-log replaces the existing entry for this Salah on the active day.
     db.delete(salahLogs)
@@ -612,58 +639,62 @@ export default function LogScreen() {
     if (pendingRow) {
       db.delete(settings).where(eq(settings.key, pendingKey)).run();
     }
+    if (openedTypeRow && selectedSalah === salahModeSalah) {
+      db.delete(settings).where(eq(settings.key, openedTypeKey)).run();
+    }
 
-    // ── AI for custom distractions (premium only, fire-and-forget) ───────
+    // ── AI for the resulting top custom distraction (Premium only) ──────
     if (isPremium) {
-      const customEntries = selectedDistractions
-        .filter((k) => k.startsWith('custom_'))
-        .map((key) => ({
-          key,
-          label: customDistractions.find((d) => d.key === key)?.label ?? key,
-        }));
+      void (async () => {
+        const pattern = await getPatternForSalah(selectedSalah);
+        const customKey = pattern.topDistraction;
+        if (!customKey?.startsWith('custom_')) return;
 
-      if (customEntries.length > 0) {
-        (async () => {
-          for (const { key, label } of customEntries) {
-            // Persist this before making network requests, so an offline save
-            // can finish classification and cache its reminder after reconnect.
-            queueAIReminderGeneration({
-              customKey: key,
-              text: label,
-              prayerName: selectedSalah,
-              closestCategory: null,
-            });
+        const label = getCustomDistractionLabel(customKey);
+        if (!label) {
+          console.warn('[reminder] Could not find a label for the top custom distraction:', customKey);
+          return;
+        }
 
-            const category = await classifyDistraction(label);
-            if (category) {
-              queueAIReminderGeneration({
-                customKey: key,
-                text: label,
-                prayerName: selectedSalah,
-                closestCategory: category,
-              });
-              db.update(salahLogs)
-                .set({ classifiedCategory: category })
-                .where(eq(salahLogs.loggedAt, now.getTime()))
-                .run();
-              queueClassificationUpdate(cloudLog, category, userId ?? undefined).catch((error) =>
-                console.warn('[sync] salah_logs classification update failed:', error)
-              );
-            }
+        // Save this before the network requests, so an offline save can finish
+        // classification and cache the next reminder after reconnecting.
+        queueAIReminderGeneration({
+          customKey,
+          text: label,
+          prayerName: selectedSalah,
+          closestCategory: null,
+        });
 
-            // A null result means classification was unavailable. Leave the
-            // durable queue intact instead of generating from an arbitrary
-            // fallback category; reconnect will retry classification first.
-            if (!category) continue;
+        const category = await classifyDistraction(label);
+        if (category) {
+          queueAIReminderGeneration({
+            customKey,
+            text: label,
+            prayerName: selectedSalah,
+            closestCategory: category,
+          });
 
-            const generated = await generateAIReminder(label, key, category, selectedSalah);
-            if (generated) {
-              // A successful generation has also populated the local cache.
-              completeAIReminderGeneration(key);
-            }
+          // Classification metadata belongs only on a log that contains this
+          // custom distraction. The top distraction may come from prior logs.
+          if (selectedDistractions.includes(customKey)) {
+            db.update(salahLogs)
+              .set({ classifiedCategory: category })
+              .where(eq(salahLogs.loggedAt, now.getTime()))
+              .run();
+            queueClassificationUpdate(cloudLog, category, userId ?? undefined).catch((error) =>
+              console.warn('[sync] salah_logs classification update failed:', error)
+            );
           }
-        })();
-      }
+        }
+
+        // Keep the durable queue for a later retry when classification is unavailable.
+        if (!category) return;
+
+        const generated = await generateAIReminder(label, customKey, category, selectedSalah);
+        if (generated) completeAIReminderGeneration(customKey);
+      })().catch((error) =>
+        console.warn('[reminder] Failed to prepare the top custom distraction:', error)
+      );
     }
 
     // Fire-and-forget cloud sync (best-effort; local save already succeeded)
@@ -693,7 +724,7 @@ export default function LogScreen() {
   // ── Acknowledgement ────────────────────────────────────────────────────────
   if (saved) {
     return (
-      <SafeAreaView className="flex-1 bg-sand-100 items-center justify-center px-8">
+      <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-sand-100 items-center justify-center px-8">
         <View className="items-center gap-y-6">
           <CheckCircleSolidIcon size={52} color="#5A7A5A" />
           <Text className="text-ink-900 text-xl font-semibold text-center">
@@ -708,7 +739,7 @@ export default function LogScreen() {
             </Pressable>
             <Pressable
               className="bg-sage-600 py-3 px-6 rounded-2xl active:bg-sage-700"
-              onPress={() => router.replace('/(tabs)')}
+              onPress={() => router.navigate('/(tabs)')}
             >
               <Text className="text-pure-white font-medium" style={{ fontSize: 14 }}>Done</Text>
             </Pressable>
@@ -724,7 +755,7 @@ export default function LogScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       className="flex-1"
     >
-      <SafeAreaView className="flex-1 bg-sand-100">
+      <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-sand-100">
         <ScrollView
           ref={scrollRef}
           className="flex-1"

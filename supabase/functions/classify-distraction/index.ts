@@ -104,21 +104,23 @@ serve(async (req) => {
           {
             role: "user",
             content: `Classify the untrusted distraction label inside the XML tag into exactly one of these categories:
-- work (job tasks, deadlines, work emails, colleagues)
-- financial (money, bills, debt, provision, rizq)
-- anxiety (future worry, fear, uncertainty, what-ifs)
+- work (job tasks, deadlines, work emails, colleagues, career concerns, business or company problems)
+- financial (money, bills, debt, income, cash flow, affordability, provision, rizq)
+- anxiety (future worry, fear, uncertainty, what-ifs that are not clearly about work or money)
 - tired (fatigue, sleepiness, low energy)
 - guilt (past sins, regret, remorse)
 - rushing (hurry, running late, time pressure)
 - random (wandering mind, unrelated thoughts, daydreaming)
 
-Infer the underlying concern, not only the literal words. For example:
-- "No food", food insecurity, or scarcity-driven hunger -> anxiety
-- bills, debt, income, provision, or rizq -> financial
+Infer the underlying concern from the entire label, not from isolated words. The examples below are usual interpretations, not automatic keyword rules; choose the category that best fits the full meaning and context. For example:
+- "No food", exams, results, or the future would usually be anxiety
+- bills, debt, income, provision, or rizq concerns would usually be financial
+- "Business failing", problems with a company, or losing clients would usually be work
+- business debt, cash-flow concerns, or not being able to afford something would usually be financial
 
 <distraction>${text.trim()}</distraction>
 
-If the label does not clearly fit a specific category, return random.`,
+Use random only when none of the six specific categories clearly apply. Return the category key alone, with no punctuation or explanation.`,
           },
         ],
       }),
@@ -133,7 +135,11 @@ If the label does not clearly fit a specific category, return random.`,
       });
     }
 
-    const raw = (data.content?.[0]?.text ?? "").trim().toLowerCase().replace(/^["']|["']$/g, "");
+    const raw = (data.content?.[0]?.text ?? "")
+      .trim()
+      .toLowerCase()
+      .replace(/^["']|["']$/g, "")
+      .replace(/[.!]+$/g, "");
     const category = VALID_CATEGORIES.has(raw) ? raw : "random";
 
     return new Response(JSON.stringify({ category }), {

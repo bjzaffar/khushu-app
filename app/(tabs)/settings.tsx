@@ -25,6 +25,7 @@ import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { selectIsPremium, type ThemePreference, useAppStore } from '@/store/appStore';
 import { getDeviceLocation } from '@/lib/location/deviceLocation';
+import { LOCATION_LABEL_SETTING_KEY, resolveLocationLabel } from '@/lib/location/locationLabel';
 import { DEV_TOOLS_ENABLED } from '@/lib/devTools';
 import { supabase } from '@/lib/supabase/client';
 import { clearLogsEverywhere } from '@/lib/supabase/sync';
@@ -35,6 +36,7 @@ import { calculatePrayerTimes } from '@/lib/prayer/prayerTimes';
 import {
   PRE_SALAH_REMINDERS_DISABLED,
   schedulePreSalahReminders,
+  cancelPreSalahReminders,
   schedulePostSalahPrompts,
   cancelPostSalahReminders,
   cancelPostSalahForSalah,
@@ -47,13 +49,16 @@ import { clearRevenueCatUser } from '@/lib/revenuecat/service';
 import { resetToAppRoot } from '@/lib/navigation';
 import { clearNativeGoogleSignInSession } from '@/lib/auth/googleSignIn';
 import { shouldUseDarkAutoTheme } from '@/lib/theme/colors';
+import {
+  canScheduleExactPrayerNotifications,
+  openExactAlarmSettings,
+} from '@/lib/notifications/exactAlarm';
 
 const MINUTE_VALUES = [
-  PRE_SALAH_REMINDERS_DISABLED,
   0,
   ...Array.from({ length: 60 }, (_, i) => i + 1),
 ];
-const APP_VERSION = Constants.nativeAppVersion ?? Constants.expoConfig?.version ?? '1.4.1';
+const APP_VERSION = Constants.nativeAppVersion ?? Constants.expoConfig?.version ?? '1.4.2';
 const AnimatedGroup = Animated.createAnimatedComponent(G);
 const STAR_GLOW_LAYERS = [
   { strokeWidth: 7, strokeOpacity: 0.06 },
@@ -363,6 +368,7 @@ export default function SettingsScreen() {
   const responsive = useResponsiveLayout();
   const {
     reminderMinutesBefore, setReminderMinutesBefore,
+    preSalahReminderEnabled, setPreSalahReminderEnabled,
     postSalahPromptEnabled, setPostSalahPromptEnabled,
     use24HourTime, setUse24HourTime,
     setDarkMode, themePreference, setThemePreference,
@@ -370,6 +376,7 @@ export default function SettingsScreen() {
     asrMadhab, setAsrMadhab,
     dndDuringSalah, setDndDuringSalah,
     location,
+    setLocationLabel,
     setTodaysPrayerTimes,
     userId,
   } = useAppStore();
@@ -391,17 +398,61 @@ export default function SettingsScreen() {
   const versionTapResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showDndPermissionDialog, setShowDndPermissionDialog] = useState(false);
   const [showNotificationPermissionDialog, setShowNotificationPermissionDialog] = useState(false);
+  const [showExactAlarmDialog, setShowExactAlarmDialog] = useState(false);
+  const [exactAlarmAccess, setExactAlarmAccess] = useState<boolean | null>(null);
+  const [notificationPermissionGranted, setNotificationPermissionGranted] = useState<boolean | null>(null);
   const [feedbackDialog, setFeedbackDialog] = useState<{ title: string; message: string; tone?: AppDialogTone } | null>(null);
   const [signedInEmail, setSignedInEmail] = useState<string | null>(null);
 
   const scrollRef = useRef<ScrollView>(null);
-  const pendingPreScheduleRef = useRef<{ prayerTimes: PrayerTimes; minutesBefore: number } | null>(null);
+  const pendingPreScheduleRef = useRef<{
+    prayerTimes: PrayerTimes;
+    minutesBefore: number;
+    enabled: boolean;
+  } | null>(null);
   const preScheduleRunningRef = useRef(false);
   const pendingPostScheduleRef = useRef<{ prayerTimes: PrayerTimes; enabled: boolean } | null>(null);
   const postScheduleRunningRef = useRef(false);
   const dndAccessSettingsOpenedRef = useRef(false);
   const notificationSettingsOpenedRef = useRef(false);
+  const reminderNotificationSettingsOpenedRef = useRef(false);
   useScrollToTop(scrollRef);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+
+    const refreshExactAlarmAccess = () => {
+      void canScheduleExactPrayerNotifications()
+        .then((access) => setExactAlarmAccess(access))
+        .catch((error) => {
+          console.warn('[settings] Could not check exact-alarm access:', error);
+          setExactAlarmAccess(false);
+        });
+    };
+
+    refreshExactAlarmAccess();
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refreshExactAlarmAccess();
+    });
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
+    const refreshNotificationPermission = () => {
+      void Notifications.getPermissionsAsync()
+        .then(({ status }) => setNotificationPermissionGranted(status === 'granted'))
+        .catch((error) => {
+          console.warn('[settings] Could not check notification permission:', error);
+          setNotificationPermissionGranted(false);
+        });
+    };
+
+    refreshNotificationPermission();
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refreshNotificationPermission();
+    });
+    return () => subscription.remove();
+  }, []);
 
   // Android's DND settings screen does not return a permission result. Check the
   // real grant when the app becomes active again, rather than treating the act
@@ -443,9 +494,15 @@ export default function SettingsScreen() {
           const { status } = await Notifications.getPermissionsAsync();
           const granted = status === 'granted';
           const wasRequestingAccess = notificationSettingsOpenedRef.current;
+          const wasSettingUpReminders = reminderNotificationSettingsOpenedRef.current;
           notificationSettingsOpenedRef.current = false;
+          reminderNotificationSettingsOpenedRef.current = false;
+          setNotificationPermissionGranted(granted);
 
           if (!granted) {
+            setPreSalahReminderEnabled(false);
+            saveSetting('pre_salah_reminder_enabled', 'false');
+            await cancelPreSalahReminders();
             setPostSalahPromptEnabled(false);
             saveSetting('post_salah_prompt_enabled', 'false');
             await cancelPostSalahReminders();
@@ -453,15 +510,24 @@ export default function SettingsScreen() {
           }
 
           if (wasRequestingAccess) {
+            setPreSalahReminderEnabled(true);
+            saveSetting('pre_salah_reminder_enabled', 'true');
             setPostSalahPromptEnabled(true);
             saveSetting('post_salah_prompt_enabled', 'true');
             if (location) {
               const prayerTimes = calculatePrayerTimes(location, new Date(), calculationMethod, asrMadhab);
+              await schedulePreSalahReminders(prayerTimes, reminderMinutesBefore);
               await schedulePostSalahPrompts(prayerTimes);
             }
           }
+
+          if (wasSettingUpReminders) {
+            setShowExactAlarmDialog(true);
+          }
         } catch (error) {
           console.warn('[settings] Could not verify notification permission:', error);
+          setPreSalahReminderEnabled(false);
+          saveSetting('pre_salah_reminder_enabled', 'false');
           setPostSalahPromptEnabled(false);
           saveSetting('post_salah_prompt_enabled', 'false');
         }
@@ -469,51 +535,82 @@ export default function SettingsScreen() {
     });
 
     return () => subscription.remove();
-  }, [asrMadhab, calculationMethod, location, setPostSalahPromptEnabled]);
+  }, [
+    asrMadhab,
+    calculationMethod,
+    location,
+    reminderMinutesBefore,
+    setPreSalahReminderEnabled,
+    setPostSalahPromptEnabled,
+  ]);
 
-  // Rehydrate from DB each time tab is focused
+  // The root layout already hydrates the shared settings before the tab
+  // navigator becomes available. Keep this focused refresh for settings that
+  // may have changed elsewhere, but run its synchronous SQLite work after the
+  // tab press has been committed. Doing it in the focus callback blocks the
+  // Settings tab from being selected on slower devices.
   useFocusEffect(
     useCallback(() => {
       scrollRef.current?.scrollTo({ y: 0, animated: false });
 
       let isActive = true;
-      void supabase.auth.getUser().then(({ data: { user } }) => {
-        if (isActive) setSignedInEmail(user?.email ?? null);
+      const task = InteractionManager.runAfterInteractions(() => {
+        void supabase.auth.getUser().then(({ data: { user } }) => {
+          if (isActive) setSignedInEmail(user?.email ?? null);
+        });
+
+        const mRow = db.select().from(settings).where(eq(settings.key, 'reminder_minutes_before')).get();
+        const savedMinutesBefore = mRow ? parseInt(mRow.value, 10) : 10;
+        const preSalahWasDisabled = savedMinutesBefore === PRE_SALAH_REMINDERS_DISABLED;
+        setReminderMinutesBefore(preSalahWasDisabled ? 10 : savedMinutesBefore);
+
+        const preRow = db.select().from(settings).where(eq(settings.key, 'pre_salah_reminder_enabled')).get();
+        setPreSalahReminderEnabled(preRow ? preRow.value !== 'false' : !preSalahWasDisabled);
+
+        const pRow = db.select().from(settings).where(eq(settings.key, 'post_salah_prompt_enabled')).get();
+        if (pRow) setPostSalahPromptEnabled(pRow.value !== 'false');
+
+        const timeFormatRow = db.select().from(settings).where(eq(settings.key, 'use_24_hour_time')).get();
+        setUse24HourTime(timeFormatRow?.value === 'true');
+
+        const themePreferenceRow = db.select().from(settings).where(eq(settings.key, 'theme_preference')).get();
+        const savedThemePreference = themePreferenceRow?.value;
+        if (savedThemePreference === 'auto' || savedThemePreference === 'light' || savedThemePreference === 'dark') {
+          setThemePreference(savedThemePreference);
+          if (savedThemePreference !== 'auto') setDarkMode(savedThemePreference === 'dark');
+        } else {
+          // Preserve the Light/Dark choice saved by versions before Auto existed.
+          const darkModeRow = db.select().from(settings).where(eq(settings.key, 'dark_mode')).get();
+          const legacyThemePreference: ThemePreference = darkModeRow?.value === 'true' ? 'dark' : 'light';
+          setThemePreference(legacyThemePreference);
+          setDarkMode(legacyThemePreference === 'dark');
+        }
+
+        const cRow = db.select().from(settings).where(eq(settings.key, 'calculation_method')).get();
+        if (cRow) setCalculationMethod(cRow.value as CalculationMethodKey);
+
+        const aRow = db.select().from(settings).where(eq(settings.key, 'asr_madhab')).get();
+        if (aRow) setAsrMadhab(aRow.value as AsrMadhab);
+
+        const dRow = db.select().from(settings).where(eq(settings.key, 'dnd_during_salah')).get();
+        if (dRow) setDndDuringSalah(dRow.value === 'true');
       });
 
-      const mRow = db.select().from(settings).where(eq(settings.key, 'reminder_minutes_before')).get();
-      if (mRow) setReminderMinutesBefore(parseInt(mRow.value, 10));
-
-      const pRow = db.select().from(settings).where(eq(settings.key, 'post_salah_prompt_enabled')).get();
-      if (pRow) setPostSalahPromptEnabled(pRow.value !== 'false');
-
-      const timeFormatRow = db.select().from(settings).where(eq(settings.key, 'use_24_hour_time')).get();
-      setUse24HourTime(timeFormatRow?.value === 'true');
-
-      const themePreferenceRow = db.select().from(settings).where(eq(settings.key, 'theme_preference')).get();
-      const savedThemePreference = themePreferenceRow?.value;
-      if (savedThemePreference === 'auto' || savedThemePreference === 'light' || savedThemePreference === 'dark') {
-        setThemePreference(savedThemePreference);
-        if (savedThemePreference !== 'auto') setDarkMode(savedThemePreference === 'dark');
-      } else {
-        // Preserve the Light/Dark choice saved by versions before Auto existed.
-        const darkModeRow = db.select().from(settings).where(eq(settings.key, 'dark_mode')).get();
-        const legacyThemePreference: ThemePreference = darkModeRow?.value === 'true' ? 'dark' : 'light';
-        setThemePreference(legacyThemePreference);
-        setDarkMode(legacyThemePreference === 'dark');
-      }
-
-      const cRow = db.select().from(settings).where(eq(settings.key, 'calculation_method')).get();
-      if (cRow) setCalculationMethod(cRow.value as CalculationMethodKey);
-
-      const aRow = db.select().from(settings).where(eq(settings.key, 'asr_madhab')).get();
-      if (aRow) setAsrMadhab(aRow.value as AsrMadhab);
-
-      const dRow = db.select().from(settings).where(eq(settings.key, 'dnd_during_salah')).get();
-      if (dRow) setDndDuringSalah(dRow.value === 'true');
-
-      return () => { isActive = false; };
-    }, [])
+      return () => {
+        isActive = false;
+        task.cancel();
+      };
+    }, [
+      setAsrMadhab,
+      setCalculationMethod,
+      setDarkMode,
+      setDndDuringSalah,
+      setPreSalahReminderEnabled,
+      setPostSalahPromptEnabled,
+      setReminderMinutesBefore,
+      setThemePreference,
+      setUse24HourTime,
+    ])
   );
 
   async function flushPreScheduleQueue() {
@@ -525,7 +622,11 @@ export default function SettingsScreen() {
         const pending = pendingPreScheduleRef.current;
         pendingPreScheduleRef.current = null;
         try {
-          await schedulePreSalahReminders(pending.prayerTimes, pending.minutesBefore);
+          if (pending.enabled) {
+            await schedulePreSalahReminders(pending.prayerTimes, pending.minutesBefore);
+          } else {
+            await cancelPreSalahReminders();
+          }
         } catch (error) {
           console.warn('[notifications] pre-Salah reschedule failed:', error);
         }
@@ -536,8 +637,8 @@ export default function SettingsScreen() {
     }
   }
 
-  function queuePreSchedule(prayerTimes: PrayerTimes, minutesBefore: number) {
-    pendingPreScheduleRef.current = { prayerTimes, minutesBefore };
+  function queuePreSchedule(prayerTimes: PrayerTimes, minutesBefore: number, enabled: boolean) {
+    pendingPreScheduleRef.current = { prayerTimes, minutesBefore, enabled };
     InteractionManager.runAfterInteractions(() => {
       void flushPreScheduleQueue();
     });
@@ -581,14 +682,45 @@ export default function SettingsScreen() {
     if (!coords) return;
     const pt = calculatePrayerTimes(coords, new Date(), method, madhab);
     setTodaysPrayerTimes(pt);
-    queuePreSchedule(pt, mins);
+    queuePreSchedule(pt, mins, preSalahReminderEnabled);
     queuePostSchedule(pt, postSalahPromptEnabled);
   }
 
   function handleMinutesChange(mins: number) {
+    if (!preSalahReminderEnabled) return;
     setReminderMinutesBefore(mins);
     saveSetting('reminder_minutes_before', String(mins));
     recalcAndReschedule(calculationMethod, asrMadhab, mins);
+  }
+
+  async function handlePreSalahToggle(val: boolean) {
+    if (!val) {
+      setWheelActive(false);
+      setPreSalahReminderEnabled(false);
+      saveSetting('pre_salah_reminder_enabled', 'false');
+      if (location) {
+        const pt = calculatePrayerTimes(location, new Date(), calculationMethod, asrMadhab);
+        queuePreSchedule(pt, reminderMinutesBefore, false);
+      } else {
+        await cancelPreSalahReminders();
+      }
+      return;
+    }
+
+    const { status } = await Notifications.getPermissionsAsync();
+    if (status !== 'granted') {
+      setPreSalahReminderEnabled(false);
+      saveSetting('pre_salah_reminder_enabled', 'false');
+      setShowNotificationPermissionDialog(true);
+      return;
+    }
+
+    setPreSalahReminderEnabled(true);
+    saveSetting('pre_salah_reminder_enabled', 'true');
+    if (location) {
+      const pt = calculatePrayerTimes(location, new Date(), calculationMethod, asrMadhab);
+      queuePreSchedule(pt, reminderMinutesBefore, true);
+    }
   }
 
   async function handleDndToggle(val: boolean) {
@@ -675,12 +807,16 @@ export default function SettingsScreen() {
 
   function dismissNotificationPermissionDialog() {
     setShowNotificationPermissionDialog(false);
+    setPreSalahReminderEnabled(false);
+    saveSetting('pre_salah_reminder_enabled', 'false');
     setPostSalahPromptEnabled(false);
     saveSetting('post_salah_prompt_enabled', 'false');
   }
 
   async function openNotificationSettings() {
     setShowNotificationPermissionDialog(false);
+    setPreSalahReminderEnabled(false);
+    saveSetting('pre_salah_reminder_enabled', 'false');
     setPostSalahPromptEnabled(false);
     saveSetting('post_salah_prompt_enabled', 'false');
     notificationSettingsOpenedRef.current = true;
@@ -692,6 +828,61 @@ export default function SettingsScreen() {
       setFeedbackDialog({
         title: 'Could not open settings',
         message: 'Please allow notifications for Khushu in your device settings, then try again.',
+        tone: 'warning',
+      });
+    }
+  }
+
+  async function openPreciseTimingSettings() {
+    setShowExactAlarmDialog(false);
+    try {
+      const notificationPermission = await Notifications.getPermissionsAsync();
+      if (notificationPermission.status !== 'granted') {
+        if (notificationPermission.canAskAgain) {
+          const requested = await Notifications.requestPermissionsAsync();
+          const granted = requested.status === 'granted';
+          setNotificationPermissionGranted(granted);
+          if (!granted) return;
+        } else {
+          reminderNotificationSettingsOpenedRef.current = true;
+          await Linking.openSettings();
+          return;
+        }
+      } else {
+        setNotificationPermissionGranted(true);
+      }
+
+      const exactAlarmGranted = await canScheduleExactPrayerNotifications();
+      setExactAlarmAccess(exactAlarmGranted);
+      if (exactAlarmGranted === true) return;
+
+      await openExactAlarmSettings();
+    } catch (error) {
+      console.warn('[settings] Could not open exact-alarm settings:', error);
+      setFeedbackDialog({
+        title: 'Could not open settings',
+        message: 'Please open Android Settings, then allow Khushu under Alarms & reminders.',
+        tone: 'warning',
+      });
+    }
+  }
+
+  async function handlePreciseTimingToggle(_nextValue: boolean) {
+    if (Platform.OS !== 'android') return;
+
+    try {
+      const [notificationPermission, exactAlarmGranted] = await Promise.all([
+        Notifications.getPermissionsAsync(),
+        canScheduleExactPrayerNotifications(),
+      ]);
+      setNotificationPermissionGranted(notificationPermission.status === 'granted');
+      setExactAlarmAccess(exactAlarmGranted);
+      setShowExactAlarmDialog(true);
+    } catch (error) {
+      console.warn('[settings] Could not start precise reminder setup:', error);
+      setFeedbackDialog({
+        title: 'Could not check permissions',
+        message: 'Please try again in a moment.',
         tone: 'warning',
       });
     }
@@ -742,8 +933,10 @@ export default function SettingsScreen() {
     // A madhab selection changes only Asr. Update exactly the two schedules
     // that depend on it, leaving every other pending prayer notification in
     // place: the Asr pre-Salah reminder and Dhuhr's end-of-window prompt.
-    void reschedulePreSalahReminder('asr', prayerTimes.asr, reminderMinutesBefore)
-      .catch((error) => console.warn('[notifications] Asr pre-Salah reschedule failed:', error));
+    if (preSalahReminderEnabled) {
+      void reschedulePreSalahReminder('asr', prayerTimes.asr, reminderMinutesBefore)
+        .catch((error) => console.warn('[notifications] Asr pre-Salah reschedule failed:', error));
+    }
     if (postSalahPromptEnabled) {
       void reschedulePostSalahPrompt('dhuhr', prayerTimes.asr)
         .catch((error) => console.warn('[notifications] Dhuhr post-Salah reschedule failed:', error));
@@ -767,6 +960,9 @@ export default function SettingsScreen() {
         .onConflictDoUpdate({ target: settings.key, set: { value: String(coords.latitude) } }).run();
       db.insert(settings).values({ key: 'location_lng', value: String(coords.longitude) })
         .onConflictDoUpdate({ target: settings.key, set: { value: String(coords.longitude) } }).run();
+      const label = await resolveLocationLabel(coords);
+      setLocationLabel(label);
+      saveSetting(LOCATION_LABEL_SETTING_KEY, label ?? '');
       recalcAndReschedule(calculationMethod, asrMadhab, reminderMinutesBefore, coords);
       setLocationStatus('done');
     } catch {
@@ -905,7 +1101,7 @@ export default function SettingsScreen() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-sand-100">
+    <SafeAreaView edges={['top', 'left', 'right']} className="flex-1 bg-sand-100">
       <ScrollView
         ref={scrollRef}
         className="flex-1"
@@ -994,15 +1190,13 @@ export default function SettingsScreen() {
           <Text className="text-xs font-medium text-ink-300 uppercase tracking-widest mb-3">
             Remind me before Salah
           </Text>
-          <View className="bg-white rounded-2xl border border-sand-200 px-4 py-2">
+          <View className={`${preSalahReminderEnabled ? 'bg-white border-sand-200' : 'bg-sand-100 border-sand-100'} rounded-2xl border px-4 py-2`}>
             <WheelPicker
               values={MINUTE_VALUES}
               selectedValue={reminderMinutesBefore}
               onValueChange={handleMinutesChange}
-              formatValue={(value) => {
-                if (value === PRE_SALAH_REMINDERS_DISABLED) return "Don't remind me";
-                return `${value} min`;
-              }}
+              formatValue={(value) => `${value} min`}
+              enabled={preSalahReminderEnabled}
               onTouchStart={() => setWheelActive(true)}
               onTouchEnd={() => setWheelActive(false)}
             />
@@ -1015,6 +1209,24 @@ export default function SettingsScreen() {
             Notifications
           </Text>
           <View className="bg-white rounded-2xl border border-sand-200 overflow-hidden">
+            {Platform.OS === 'android' && exactAlarmAccess !== null && notificationPermissionGranted !== null && (
+              <ToggleRow
+                label="Precise reminder timing"
+                description={notificationPermissionGranted && exactAlarmAccess
+                  ? 'Prayer notifications can arrive on time.'
+                  : 'Requires notifications and Alarms & reminders access.'}
+                value={notificationPermissionGranted && exactAlarmAccess === true}
+                onValueChange={(value) => void handlePreciseTimingToggle(value)}
+                showDivider
+              />
+            )}
+            <ToggleRow
+              label="Pre-Salah reminder"
+              description="Remind me before each Salah begins."
+              value={preSalahReminderEnabled}
+              onValueChange={(value) => void handlePreSalahToggle(value)}
+              showDivider
+            />
             <ToggleRow
               label="Post-Salah prompt"
               description="Remind me to log if I haven't after the prayer window closes."
@@ -1296,7 +1508,7 @@ export default function SettingsScreen() {
       </ScrollView>
 
       {/* ── Sign Out Confirmation Modal ────────────────────────────────── */}
-      <Modal
+      {showAppInfo && <Modal
         visible={showAppInfo}
         transparent
         animationType="fade"
@@ -1395,9 +1607,9 @@ export default function SettingsScreen() {
             </Pressable>
           </View>
         </View>
-      </Modal>
+      </Modal>}
 
-      <AppDialog
+      {showSignOutModal && <AppDialog
         visible={showSignOutModal}
         title="Sign out?"
         message="Are you sure you want to sign out?"
@@ -1408,10 +1620,10 @@ export default function SettingsScreen() {
           { label: 'Cancel', tone: 'secondary', onPress: () => setShowSignOutModal(false) },
           { label: 'Sign out', tone: 'destructive', onPress: confirmSignOut },
         ]}
-      />
+      />}
 
       {/* ── Delete Account Confirmation Modal ──────────────────────────── */}
-      <AppDialog
+      {showDeleteAccountModal && <AppDialog
         visible={showDeleteAccountModal}
         title="Delete account?"
         message="This will permanently delete your account. Your locally stored logs will remain on this device, but your account and cloud data will be gone forever."
@@ -1428,10 +1640,10 @@ export default function SettingsScreen() {
             },
           },
         ]}
-      />
+      />}
 
       {/* ── Clear Logs Confirmation Modal ──────────────────────────────── */}
-      <AppDialog
+      {showFinalDeleteAccountModal && <AppDialog
         visible={showFinalDeleteAccountModal}
         title="Permanently delete account?"
         message="This cannot be undone."
@@ -1441,9 +1653,9 @@ export default function SettingsScreen() {
           { label: 'Cancel', tone: 'secondary', onPress: closeDeleteAccountFlow },
           { label: 'Delete account', tone: 'destructive', onPress: confirmDeleteAccount },
         ]}
-      />
+      />}
 
-      <AppDialog
+      {showClearLogsModal && <AppDialog
         visible={showClearLogsModal}
         title="Clear all log history?"
         message="This will permanently delete all your logged salah reflections."
@@ -1460,9 +1672,9 @@ export default function SettingsScreen() {
             },
           },
         ]}
-      />
+      />}
 
-      <AppDialog
+      {showFinalClearLogsModal && <AppDialog
         visible={showFinalClearLogsModal}
         title="Permanently clear all log history?"
         message="This cannot be undone."
@@ -1472,9 +1684,9 @@ export default function SettingsScreen() {
           { label: 'Cancel', tone: 'secondary', onPress: closeClearLogsFlow },
           { label: 'Clear log history', tone: 'destructive', onPress: confirmClearLogs },
         ]}
-      />
+      />}
 
-      <AppDialog
+      {showDndPermissionDialog && <AppDialog
         visible={showDndPermissionDialog}
         title="Allow Do Not Disturb access"
         message="Android requires this special access before Khushu can silence your phone. On the next screen, enable Khushu, then return to the app."
@@ -1488,28 +1700,46 @@ export default function SettingsScreen() {
           },
           { label: 'Open settings', onPress: () => void openDndAccessSettings() },
         ]}
-      />
+      />}
 
-      <AppDialog
+      {showNotificationPermissionDialog && <AppDialog
         visible={showNotificationPermissionDialog}
         title="Allow notifications"
-        message="Khushu needs notification access before it can send post-Salah prompts. Enable notifications for Khushu in the next screen, then return to the app."
+        message="Khushu needs notification access before it can send prayer reminders or post-Salah prompts. Enable notifications for Khushu in the next screen, then return to the app."
         tone="info"
         onDismiss={dismissNotificationPermissionDialog}
         actions={[
           { label: 'Cancel', tone: 'secondary', onPress: dismissNotificationPermissionDialog },
           { label: 'Open settings', onPress: () => void openNotificationSettings() },
         ]}
-      />
+      />}
 
-      <AppDialog
+      {showExactAlarmDialog && <AppDialog
+        visible={showExactAlarmDialog}
+        title={notificationPermissionGranted
+          ? 'Allow Alarms & reminders'
+          : 'Allow prayer notifications'}
+        message={notificationPermissionGranted
+          ? exactAlarmAccess
+            ? 'Both permissions are enabled. You can manage Alarms & reminders access on the next screen.'
+            : 'Android requires this special access to keep prayer reminders on time. On the next screen, allow Khushu to set alarms and reminders.'
+          : 'Khushu needs notification access and Android\'s Alarms & reminders access to keep prayer notifications on time. You\'ll be asked to enable both.'}
+        tone="info"
+        onDismiss={() => setShowExactAlarmDialog(false)}
+        actions={[
+          { label: 'Cancel', tone: 'secondary', onPress: () => setShowExactAlarmDialog(false) },
+          { label: notificationPermissionGranted ? 'Open settings' : 'Continue', onPress: () => void openPreciseTimingSettings() },
+        ]}
+      />}
+
+      {feedbackDialog !== null && <AppDialog
         visible={feedbackDialog !== null}
         title={feedbackDialog?.title ?? ''}
         message={feedbackDialog?.message ?? ''}
         tone={feedbackDialog?.tone}
         onDismiss={() => setFeedbackDialog(null)}
         actions={[{ label: 'OK', onPress: () => setFeedbackDialog(null) }]}
-      />
+      />}
 
     </SafeAreaView>
   );

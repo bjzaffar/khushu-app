@@ -22,8 +22,15 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      detachInactiveScreens={false}
       screenOptions={{
         headerShown: false,
+        // Mount every tab as soon as the tab navigator opens. This moves the
+        // initial render work behind the launch screen instead of doing it
+        // when a user first switches to a tab.
+        lazy: false,
+        freezeOnBlur: false,
+        animation: 'none',
         sceneStyle: { backgroundColor: 'transparent' },
         tabBarStyle: {
           backgroundColor: 'transparent',

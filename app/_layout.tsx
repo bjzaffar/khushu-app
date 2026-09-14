@@ -26,7 +26,10 @@ import { calculatePrayerTimes } from '@/lib/prayer/prayerTimes';
 import {
   setupNotificationChannel,
   schedulePreSalahReminders,
+  cancelPreSalahReminders,
   schedulePostSalahPrompts,
+  cancelPostSalahReminders,
+  dismissExpiredPrayerNotifications,
   scheduleWeeklySummaryNotification,
   scheduleReEngagementNotification,
 } from '@/lib/notifications/notificationService';
@@ -53,6 +56,7 @@ import {
   identifyAnalyticsUser,
   resetAnalyticsUser,
 } from '@/lib/analytics/posthog';
+import { LOCATION_LABEL_SETTING_KEY, resolveLocationLabel } from '@/lib/location/locationLabel';
 
 // Capture the deep link URL IMMEDIATELY at module scope — before any async init blocks the navigator.
 // Without this, release builds lose the URL because the callback screen can't mount until
@@ -90,8 +94,10 @@ export default function RootLayout() {
     setHasCompletedOnboarding,
     setDbReady,
     setLocation,
+    setLocationLabel,
     setTodaysPrayerTimes,
     setReminderMinutesBefore,
+    setPreSalahReminderEnabled,
     setPostSalahPromptEnabled,
     setUse24HourTime,
     location,
@@ -113,6 +119,8 @@ export default function RootLayout() {
   const { setColorScheme } = useColorScheme();
   const theme = getThemeColors(darkMode);
   const [initError, setInitError] = useState<string | null>(null);
+  const [pendingNotificationResponse, setPendingNotificationResponse] =
+    useState<Notifications.NotificationResponse | null>(null);
   const authVersionRef = useRef(0);
 
   useEffect(() => {
@@ -165,6 +173,44 @@ export default function RootLayout() {
         setThemePreference(persistedThemePreference);
         setColorScheme(persistedDarkMode ? 'dark' : 'light');
         setDarkMode(persistedDarkMode);
+
+        // Hydrate the saved location and today's calculations before revealing
+        // Home. Rendering first with Zustand's null defaults caused the empty
+        // location state to flash briefly on every cold launch.
+        const startupLatRow = db.select().from(settings).where(eq(settings.key, 'location_lat')).get();
+        const startupLngRow = db.select().from(settings).where(eq(settings.key, 'location_lng')).get();
+        const startupLabelRow = db.select().from(settings).where(eq(settings.key, LOCATION_LABEL_SETTING_KEY)).get();
+        if (startupLatRow && startupLngRow) {
+          const startupLocation = {
+            latitude: parseFloat(startupLatRow.value),
+            longitude: parseFloat(startupLngRow.value),
+          };
+          if (Number.isFinite(startupLocation.latitude) && Number.isFinite(startupLocation.longitude)) {
+            const methodRow = db.select().from(settings).where(eq(settings.key, 'calculation_method')).get();
+            const method = (methodRow?.value ?? 'MuslimWorldLeague') as CalculationMethodKey;
+            const madhabRow = db.select().from(settings).where(eq(settings.key, 'asr_madhab')).get();
+            const madhab = (madhabRow?.value ?? 'Shafi') as AsrMadhab;
+
+            setLocation(startupLocation);
+            setLocationLabel(startupLabelRow?.value?.trim() || null);
+            setCalculationMethod(method);
+            setAsrMadhab(madhab);
+            setTodaysPrayerTimes(calculatePrayerTimes(startupLocation, new Date(), method, madhab));
+
+            // Older installs have coordinates but no cached name. Backfill it
+            // without requesting permission or delaying the first frame.
+            if (!startupLabelRow?.value?.trim()) {
+              void resolveLocationLabel(startupLocation).then((label) => {
+                if (!label) return;
+                setLocationLabel(label);
+                db.insert(settings)
+                  .values({ key: LOCATION_LABEL_SETTING_KEY, value: label })
+                  .onConflictDoUpdate({ target: settings.key, set: { value: label } })
+                  .run();
+              });
+            }
+          }
+        }
         setIsHydrated(true);
 
         await setupNotificationChannel();
@@ -190,14 +236,25 @@ export default function RootLayout() {
           );
         } else {
           setUserId(null);
-          resetAnalyticsUser();
+          // Preserve PostHog's anonymous ID for guests. Resetting it on every
+          // cold start makes lifecycle events and subsequent guest activity
+          // belong to separate people, which breaks funnels.
           await clearRevenueCatUser();
         }
 
         // Rehydrate notification settings
         const minutesRow = db.select().from(settings).where(eq(settings.key, 'reminder_minutes_before')).get();
-        const minutesBefore = minutesRow ? parseInt(minutesRow.value, 10) : 10;
+        const savedMinutesBefore = minutesRow ? parseInt(minutesRow.value, 10) : 10;
+        // Versions before the dedicated pre-Salah switch used -1 as the off
+        // value. Preserve that choice while giving the picker a usable time if
+        // the user turns reminders back on.
+        const preSalahWasDisabled = savedMinutesBefore === -1;
+        const minutesBefore = preSalahWasDisabled ? 10 : savedMinutesBefore;
         setReminderMinutesBefore(minutesBefore);
+
+        const preRow = db.select().from(settings).where(eq(settings.key, 'pre_salah_reminder_enabled')).get();
+        const preEnabled = preRow ? preRow.value !== 'false' : !preSalahWasDisabled;
+        setPreSalahReminderEnabled(preEnabled);
 
         const postRow = db.select().from(settings).where(eq(settings.key, 'post_salah_prompt_enabled')).get();
         const postEnabled = postRow?.value !== 'false';
@@ -229,8 +286,11 @@ export default function RootLayout() {
 
           const { status: notificationPermission } = await Notifications.getPermissionsAsync();
           if (notificationPermission === 'granted') {
-            await schedulePreSalahReminders(prayerTimes, minutesBefore);
+            if (preEnabled) await schedulePreSalahReminders(prayerTimes, minutesBefore);
+            else await cancelPreSalahReminders();
             if (postEnabled) await schedulePostSalahPrompts(prayerTimes);
+            else await cancelPostSalahReminders();
+            await dismissExpiredPrayerNotifications();
           }
         }
 
@@ -262,9 +322,20 @@ export default function RootLayout() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       const version = ++authVersionRef.current;
 
-      if (!session?.user || event === 'SIGNED_OUT') {
+      if (event === 'SIGNED_OUT') {
         setUserId(null);
         resetAnalyticsUser();
+        setPremiumStatus('free');
+        setTimeout(() => {
+          clearRevenueCatUser();
+        }, 0);
+        return;
+      }
+
+      // INITIAL_SESSION for a guest is not a sign-out. Keep the existing
+      // anonymous PostHog identity so events remain attributable to one person.
+      if (!session?.user) {
+        setUserId(null);
         setPremiumStatus('free');
         setTimeout(() => {
           clearRevenueCatUser();
@@ -323,6 +394,63 @@ export default function RootLayout() {
     };
   }, [asrMadhab, calculationMethod, location, setColorScheme, setDarkMode, themePreference]);
 
+  // Android can revoke exact-alarm access while the app is backgrounded, and
+  // prayer times can roll over to a new day on either platform. Rebuild the
+  // one-shot alarms on return using the current permission and today's times.
+  useEffect(() => {
+    if (!isDbReady) return;
+
+    let running = false;
+    let refreshQueued = false;
+
+    const refreshPrayerNotifications = async () => {
+      if (running) {
+        refreshQueued = true;
+        return;
+      }
+      running = true;
+
+      try {
+        do {
+          refreshQueued = false;
+          const current = useAppStore.getState();
+          if (!current.location) continue;
+
+          const { status } = await Notifications.getPermissionsAsync();
+          if (status !== 'granted') continue;
+
+          const prayerTimes = calculatePrayerTimes(
+            current.location,
+            new Date(),
+            current.calculationMethod,
+            current.asrMadhab,
+          );
+          current.setTodaysPrayerTimes(prayerTimes);
+          if (current.preSalahReminderEnabled) {
+            await schedulePreSalahReminders(prayerTimes, current.reminderMinutesBefore);
+          } else {
+            await cancelPreSalahReminders();
+          }
+          if (current.postSalahPromptEnabled) {
+            await schedulePostSalahPrompts(prayerTimes);
+          } else {
+            await cancelPostSalahReminders();
+          }
+          await dismissExpiredPrayerNotifications();
+        } while (refreshQueued);
+      } catch (error) {
+        console.warn('[notifications] foreground refresh failed:', error);
+      } finally {
+        running = false;
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void refreshPrayerNotifications();
+    });
+    return () => subscription.remove();
+  }, [isDbReady]);
+
   // The initial theme is resolved while the navigator is still hidden. On a
   // cold Android start, NativeWind can initialise its CSS variables from the
   // device colour scheme after that early call, leaving the Zustand setting on
@@ -373,13 +501,14 @@ export default function RootLayout() {
   // customers receive the full pattern depth immediately after purchase.
   useEffect(() => {
     if (!isDbReady || (premiumStatus === 'unknown' && !isPremium)) return;
-    const { todaysPrayerTimes, reminderMinutesBefore } = useAppStore.getState();
+    const { todaysPrayerTimes, reminderMinutesBefore, preSalahReminderEnabled } = useAppStore.getState();
     if (!todaysPrayerTimes) return;
     Notifications.getPermissionsAsync().then(({ status }) => {
       if (status === 'granted') {
-        schedulePreSalahReminders(todaysPrayerTimes, reminderMinutesBefore).catch((error) =>
-          console.warn('[notifications] entitlement reschedule failed:', error)
-        );
+        const update = preSalahReminderEnabled
+          ? schedulePreSalahReminders(todaysPrayerTimes, reminderMinutesBefore)
+          : cancelPreSalahReminders();
+        update.catch((error) => console.warn('[notifications] entitlement reschedule failed:', error));
       }
     });
   }, [isDbReady, isPremium, premiumStatus]);
@@ -417,19 +546,48 @@ export default function RootLayout() {
   }, [isDbReady, isPremium]);
 
   // Handle notification taps:
-  // - pre_salah → open Home; the prayer has not started yet
-  // - post_salah → open Log tab pre-selected to that prayer
+  // - pre_salah / weekly_summary → open Home
+  // - post_salah → open Log tab pre-selected to that prayer and its log day
   useEffect(() => {
-    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      const data = response.notification.request.content.data as { type?: string; salah?: SalahName };
-      if (data?.type === 'pre_salah') {
-        router.replace('/(tabs)');
-      } else if (data?.type === 'post_salah' && data.salah) {
-        router.push({ pathname: '/(tabs)/log', params: { salah: data.salah } });
-      }
-    });
+    const handleNotificationResponse = (response: Notifications.NotificationResponse) => {
+      setPendingNotificationResponse(response);
+      Notifications.clearLastNotificationResponse();
+    };
+
+    const lastResponse = Notifications.getLastNotificationResponse();
+    if (lastResponse) {
+      handleNotificationResponse(lastResponse);
+    }
+
+    const sub = Notifications.addNotificationResponseReceivedListener(handleNotificationResponse);
     return () => sub.remove();
   }, []);
+
+  // Wait until the root Stack has rendered before navigating from a cold-start
+  // notification tap. Expo Router throws if navigation happens any earlier.
+  useEffect(() => {
+    if (
+      !pendingNotificationResponse
+      || !isHydrated
+      || (!fontsLoaded && !fontError)
+      || !hasCompletedOnboarding
+    ) return;
+
+    const data = pendingNotificationResponse.notification.request.content.data as {
+      type?: string;
+      salah?: SalahName;
+      logDay?: 'today' | 'yesterday';
+    };
+    if (data?.type === 'pre_salah' || data?.type === 'weekly_summary') {
+      router.replace('/(tabs)');
+    } else if (data?.type === 'post_salah' && data.salah) {
+      router.push({
+        pathname: '/(tabs)/log',
+        params: { salah: data.salah, day: data.logDay ?? 'today' },
+      });
+    }
+    setPendingNotificationResponse(null);
+  }, [fontError, fontsLoaded, hasCompletedOnboarding, isHydrated, pendingNotificationResponse]);
 
   // Capture deep link URLs that arrive while the app is already running (warm start).
   // Stores them so auth/callback can read via consumePendingUrl() instead of relying on

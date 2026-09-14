@@ -197,7 +197,8 @@ function setCachedReminder(customKey: string, reminder: GeneratedReminder): void
 
 interface CustomDistraction { key: string; label: string; }
 
-function getCustomDistractionLabel(customKey: string): string | null {
+/** Find the current or archived label for a custom distraction key. */
+export function getCustomDistractionLabel(customKey: string): string | null {
   const settingKeys = [
     'custom_distractions',
     'custom_distraction_labels',

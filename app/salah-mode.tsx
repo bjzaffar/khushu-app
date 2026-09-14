@@ -7,6 +7,10 @@ import { useAppStore } from '@/store/appStore';
 import { SALAH_DISPLAY_NAMES } from '@/types';
 import { getPatternForSalah } from '@/lib/patterns/patternEngine';
 import { getReminderContent } from '@/lib/notifications/reminderContent';
+import { getLastOpenedReminderTypeKey } from '@/lib/notifications/reminderAttribution';
+import { db } from '@/db/database';
+import { settings } from '@/db/schema';
+import { eq } from 'drizzle-orm';
 import { ResponsiveContent } from '@/components/responsive/ResponsiveContent';
 import { useResponsiveLayout } from '@/components/responsive/ResponsiveLayout';
 
@@ -29,18 +33,35 @@ export default function SalahModeScreen() {
 
   // Load reminder content on mount
   useEffect(() => {
+    let cancelled = false;
     if (!activeSalah) { setStep('active'); return; }
+
+    const openedTypeKey = getLastOpenedReminderTypeKey(activeSalah);
+    // Each entry is a fresh reminder view. Clearing first prevents an older
+    // tracked reminder being attributed if this view is cold-start/untracked.
+    db.delete(settings).where(eq(settings.key, openedTypeKey)).run();
+
     (async () => {
       try {
         const pattern = await getPatternForSalah(activeSalah);
-        const { text } = getReminderContent(pattern);
+        const { text, type } = getReminderContent(pattern);
+        if (cancelled) return;
+
+        if (type) {
+          db.insert(settings)
+            .values({ key: openedTypeKey, value: type })
+            .onConflictDoUpdate({ target: settings.key, set: { value: type } })
+            .run();
+        }
         setReminderText(text);
         setStep('reminder');
       } catch {
-        setStep('active');
+        if (!cancelled) setStep('active');
       }
     })();
-  }, []);
+
+    return () => { cancelled = true; };
+  }, [activeSalah]);
 
   // On Android: silence phone when entering Salah Mode, restore when leaving.
   // Android 7+ requires the user to grant Notification Policy (DND) access
@@ -135,12 +156,12 @@ export default function SalahModeScreen() {
   async function handleEndSalah() {
     endSalahMode();
     if (activeSalah) {
-      router.replace({
+      router.dismissTo({
         pathname: '/(tabs)/log',
         params: { salah: activeSalah, fromSalahMode: '1' },
       });
     } else {
-      router.replace('/(tabs)/log');
+      router.dismissTo('/(tabs)/log');
     }
   }
 

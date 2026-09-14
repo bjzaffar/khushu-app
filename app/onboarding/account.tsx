@@ -22,7 +22,7 @@ import {
   isGoogleSignInCancellation,
 } from '@/lib/auth/googleSignInConfig';
 import { startNativeGoogleSignIn } from '@/lib/auth/googleSignIn';
-import { captureAnalyticsEvent } from '@/lib/analytics/posthog';
+import { captureAnalyticsEvent, identifyAnalyticsUser } from '@/lib/analytics/posthog';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -96,6 +96,9 @@ export default function AccountScreen() {
     isNewAccount = false,
   ) {
     setUserId(userId);
+    // Identify before emitting completion events so the authenticated funnel
+    // path is connected to the person who started onboarding.
+    identifyAnalyticsUser(userId);
     captureAnalyticsEvent(isNewAccount ? 'account created' : 'account signed in', { provider });
     // Make the authenticated user's SQLite cache match Supabase before they
     // return to the app. Offline sessions retain their current local cache
@@ -314,12 +317,12 @@ export default function AccountScreen() {
 
               <View className="items-center gap-y-2 mb-8">
                 <CloudIcon size={responsive.scaleControl(32)} color="#5A7A5A" />
-                <Text className="text-2xl font-semibold text-ink-900 text-center">
+                <Text className="text-2xl text-ink-900 text-center">
                   {isFromSettings ? 'Sign in' : 'Sync your reflections'}
                 </Text>
                 {!isFromSettings && (
                   <Text className="text-ink-300 text-sm text-center leading-relaxed mt-1">
-                    Create an account to back up your logs and unlock Premium. You can always skip this.
+                    Create an account to back up your insights and logs.
                   </Text>
                 )}
               </View>
