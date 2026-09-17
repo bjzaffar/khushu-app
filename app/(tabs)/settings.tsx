@@ -58,7 +58,7 @@ const MINUTE_VALUES = [
   0,
   ...Array.from({ length: 60 }, (_, i) => i + 1),
 ];
-const APP_VERSION = Constants.nativeAppVersion ?? Constants.expoConfig?.version ?? '1.4.2';
+const APP_VERSION = Constants.nativeAppVersion ?? Constants.expoConfig?.version ?? '1.4.3';
 const AnimatedGroup = Animated.createAnimatedComponent(G);
 const STAR_GLOW_LAYERS = [
   { strokeWidth: 7, strokeOpacity: 0.06 },
